@@ -1,0 +1,12 @@
+/* OPN Connect — emojis simples (pas d'animation) */
+
+.opn-emoji {
+  display: inline-block;
+  line-height: 1;
+  font-style: normal;
+  user-select: none;
+}
+
+.opn-emoji-picker-btn:hover {
+  background: #f8fafc;
+}

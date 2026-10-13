@@ -1,0 +1,14 @@
+<svg viewBox="0 0 320 88" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Carré Vert Haut-Gauche -->
+  <rect x="4" y="4" width="52" height="52" rx="14" fill="#009E60" />
+  <!-- Carré Jaune Bas-Droit -->
+  <rect x="24" y="24" width="52" height="52" rx="14" fill="#FCD116" />
+  <!-- Croix Blanche de Pharmacie -->
+  <rect x="23" y="13" width="14" height="34" rx="5" fill="#FFFFFF" />
+  <rect x="13" y="23" width="34" height="14" rx="5" fill="#FFFFFF" />
+  
+  <!-- Typographie Office Pharmaceutique National -->
+  <text x="96" y="26" fill="#235BA8" font-family="'Plus Jakarta Sans', Arial, sans-serif" font-weight="800" font-size="20">Office</text>
+  <text x="96" y="50" fill="#235BA8" font-family="'Plus Jakarta Sans', Arial, sans-serif" font-weight="800" font-size="20">Pharmaceutique</text>
+  <text x="96" y="74" fill="#235BA8" font-family="'Plus Jakarta Sans', Arial, sans-serif" font-weight="800" font-size="20">National</text>
+</svg>

@@ -1,0 +1,1198 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Plaquette Commerciale & Catalogue des Solutions — OPN DIGITAL HUB 2026</title>
+  
+  <!-- Polices Google Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Script html2pdf.js pour téléchargement direct -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+  <style>
+    :root {
+      --opn-green: #00A651;
+      --opn-yellow: #FFDE16;
+      --opn-blue: #2E68B4;
+      --opn-navy: #0B1E38;
+      --opn-dark: #071224;
+      --opn-slate: #334155;
+      --opn-light: #F8FAFC;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: #0f172a;
+      color: #0f172a;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    /* Barre d'actions fixe en haut (masquée à l'impression) */
+    .toolbar-bar {
+      position: sticky;
+      top: 0;
+      z-index: 9999;
+      background: #020617;
+      color: white;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #1e293b;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+
+    .toolbar-title {
+      font-size: 14px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .badge-pill {
+      font-size: 10px;
+      font-weight: 800;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: rgba(0, 166, 81, 0.2);
+      color: #00FF87;
+      border: 1px solid rgba(0, 166, 81, 0.4);
+      text-transform: uppercase;
+    }
+
+    .toolbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+      border: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+      text-decoration: none;
+    }
+
+    .btn-print {
+      background: #1e293b;
+      color: #e2e8f0;
+      border: 1px solid #334155;
+    }
+
+    .btn-print:hover {
+      background: #334155;
+    }
+
+    .btn-download {
+      background: linear-gradient(135deg, #00A651, #059669);
+      color: white;
+      box-shadow: 0 4px 12px rgba(0, 166, 81, 0.3);
+    }
+
+    .btn-download:hover {
+      background: linear-gradient(135deg, #059669, #047857);
+      transform: translateY(-1px);
+    }
+
+    /* Conteneur principal des slides */
+    .deck-container {
+      max-width: 1240px;
+      margin: 30px auto;
+      display: flex;
+      flex-direction: column;
+      gap: 40px;
+      padding: 0 20px 60px;
+    }
+
+    /* Format d'une slide individuelle */
+    .slide {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: white;
+      border-radius: 16px;
+      overflow: hidden;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 44px 52px;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.4);
+      page-break-after: always;
+      break-after: page;
+    }
+
+    /* Ruban Tricolore Gabonais */
+    .gabon-ribbon {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 7px;
+      display: flex;
+    }
+
+    .ribbon-green { flex: 1; background: var(--opn-green); }
+    .ribbon-yellow { flex: 1; background: var(--opn-yellow); }
+    .ribbon-blue { flex: 1; background: var(--opn-blue); }
+
+    /* En-tête officiel de slide */
+    .slide-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1.5px solid #e2e8f0;
+      padding-bottom: 16px;
+      margin-bottom: 20px;
+    }
+
+    .slide-header-dark {
+      border-bottom-color: rgba(255,255,255,0.12);
+    }
+
+    .brand-group {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .brand-title {
+      font-size: 18px;
+      font-weight: 900;
+      color: var(--opn-navy);
+      line-height: 1.1;
+    }
+
+    .brand-sub {
+      font-size: 10.5px;
+      font-weight: 700;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .slide-number {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      font-weight: 800;
+      color: #94a3b8;
+      background: #f1f5f9;
+      padding: 4px 10px;
+      border-radius: 6px;
+    }
+
+    /* Pied de slide */
+    .slide-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-top: 1.5px solid #e2e8f0;
+      padding-top: 14px;
+      font-size: 11px;
+      color: #64748b;
+      font-weight: 600;
+    }
+
+    .slide-footer-dark {
+      border-top-color: rgba(255,255,255,0.12);
+      color: #94a3b8;
+    }
+
+    /* Thèmes sombres pour slides spécifiques (Garde, Synthèse, CTA) */
+    .slide-dark {
+      background: radial-gradient(circle at 80% 20%, #1e3a5f 0%, #0b1e38 60%, #061120 100%);
+      color: white;
+    }
+
+    .slide-dark .brand-title { color: white; }
+    .slide-dark .brand-sub { color: var(--opn-yellow); }
+    .slide-dark .slide-number { background: rgba(255,255,255,0.1); color: #cbd5e1; }
+
+    /* Typographies et grilles de contenu */
+    h1 { font-size: 38px; font-weight: 900; line-height: 1.15; letter-spacing: -0.5px; }
+    h2 { font-size: 24px; font-weight: 800; line-height: 1.25; color: var(--opn-navy); }
+    h3 { font-size: 15px; font-weight: 800; margin-bottom: 6px; }
+    p { font-size: 12.5px; line-height: 1.6; color: #475569; }
+    
+    .text-green { color: var(--opn-green); }
+    .text-yellow { color: var(--opn-yellow); }
+    .text-blue { color: var(--opn-blue); }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+
+    .card {
+      background: #f8fafc;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 18px 20px;
+    }
+
+    .card-dark {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      color: white;
+    }
+    .card-dark p { color: #cbd5e1; }
+
+    .metric-box {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 16px;
+      text-align: left;
+    }
+
+    .metric-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--opn-navy);
+      margin: 4px 0;
+    }
+
+    .metric-label {
+      font-size: 10.5px;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: #64748b;
+    }
+
+    .feature-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      font-size: 12px;
+    }
+
+    .feature-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      color: #334155;
+    }
+
+    .feature-list li strong {
+      color: #0f172a;
+    }
+
+    .check-icon {
+      color: var(--opn-green);
+      font-weight: 900;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    /* MEDIA PRINT : Format paysage strict A4 pour rendu PDF haute précision */
+    @media print {
+      body {
+        background: white;
+        margin: 0;
+      }
+
+      .toolbar-bar {
+        display: none !important;
+      }
+
+      .deck-container {
+        max-width: none;
+        margin: 0;
+        padding: 0;
+        gap: 0;
+      }
+
+      .slide {
+        width: 297mm;
+        height: 210mm;
+        min-height: 210mm;
+        max-height: 210mm;
+        border-radius: 0;
+        box-shadow: none;
+        margin: 0;
+        page-break-after: always !important;
+        break-after: page !important;
+        padding: 18mm 20mm;
+      }
+
+      @page {
+        size: A4 landscape;
+        margin: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- BARRE DE CONTRÔLE SUPÉRIEURE (Écran uniquement) -->
+  <header class="toolbar-bar">
+    <div class="toolbar-title">
+      <span class="badge-pill">Catalogue Officiel 2026</span>
+      <span>OPN DIGITAL HUB — Plaquette Commerciale & Présentation des Modules</span>
+    </div>
+    <div class="toolbar-actions">
+      <button class="btn btn-print" onclick="window.print()">
+        🖨️ Imprimer / Aperçu
+      </button>
+      <button class="btn btn-download" onclick="downloadPdfDeck()">
+        📥 Télécharger le PDF (15 Slides)
+      </button>
+    </div>
+  </header>
+
+  <!-- CONTENEUR DES 15 SLIDES PAYSAGE -->
+  <main class="deck-container" id="deck-root">
+
+    <!-- =================================================================== -->
+    <!-- SLIDE 1 : PAGE DE GARDE EXÉCUTIVE -->
+    <!-- =================================================================== -->
+    <section class="slide slide-dark">
+      <div class="gabon-ribbon">
+        <div class="ribbon-green"></div>
+        <div class="ribbon-yellow"></div>
+        <div class="ribbon-blue"></div>
+      </div>
+
+      <div class="slide-header slide-header-dark">
+        <div class="brand-group">
+          <div>
+            <div class="brand-sub">RÉPUBLIQUE GABONAISE • MINISTÈRE DE LA SANTÉ</div>
+            <div class="brand-title">Office Pharmaceutique National (OPN)</div>
+          </div>
+        </div>
+        <span class="slide-number">Slide 01 / 15</span>
+      </div>
+
+      <div style="margin: auto 0; padding: 10px 0;">
+        <span class="badge-pill" style="margin-bottom: 16px; display: inline-block;">
+          Solution d'État • Standard CEMAC / OMS • 100% Souveraine
+        </span>
+        <h1 style="color: white; margin-bottom: 14px;">
+          OPN DIGITAL HUB <span style="color: var(--opn-green);">2026</span>
+        </h1>
+        <p style="font-size: 16px; color: #e2e8f0; max-width: 850px; line-height: 1.6; margin-bottom: 24px;">
+          Plateforme Numérique Intégrée de Gestion Logistique, de Télémétrie Chaîne du Froid IoT, de Dispensation Hospitalière et de Sécurisation Financière des Approvisionnements Pharmaceutiques de l'État Gabonais.
+        </p>
+        <div style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); padding: 16px 20px; border-radius: 12px; max-width: 780px;">
+          <p style="font-size: 13px; color: #f1f5f9; font-style: italic;">
+            « Garantir à chaque citoyen gabonais, du Centre Hospitalier Universitaire de Libreville jusqu’au dispensaire le plus reculé, un accès équitable et ininterrompu à des médicaments essentiels de qualité certifiée à prix plafonné. »
+          </p>
+        </div>
+      </div>
+
+      <div class="grid-4" style="margin-top: 10px;">
+        <div class="card card-dark">
+          <div style="font-size: 10px; font-weight: 800; color: #94a3b8; text-transform: uppercase;">Budget PNA Géré</div>
+          <div style="font-size: 20px; font-weight: 900; color: var(--opn-yellow); font-family: 'JetBrains Mono';">18.5 Mrd FCFA</div>
+        </div>
+        <div class="card card-dark">
+          <div style="font-size: 10px; font-weight: 800; color: #94a3b8; text-transform: uppercase;">Couverture Nationale</div>
+          <div style="font-size: 20px; font-weight: 900; color: #38bdf8; font-family: 'JetBrains Mono';">9 Provinces</div>
+        </div>
+        <div class="card card-dark">
+          <div style="font-size: 10px; font-weight: 800; color: #94a3b8; text-transform: uppercase;">Taux de Service</div>
+          <div style="font-size: 20px; font-weight: 900; color: var(--opn-green); font-family: 'JetBrains Mono';">98.4% Conforme</div>
+        </div>
+        <div class="card card-dark">
+          <div style="font-size: 10px; font-weight: 800; color: #94a3b8; text-transform: uppercase;">Sécurité Trésor</div>
+          <div style="font-size: 20px; font-weight: 900; color: #c084fc; font-family: 'JetBrains Mono';">0 FCFA Écart</div>
+        </div>
+      </div>
+
+      <div class="slide-footer slide-footer-dark">
+        <span>Direction Générale de l'OPN — Siège Oloumi, B.P. 518 Libreville</span>
+        <span>Édition Institutionnelle & Commerciale 2026</span>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- SLIDE 2 : SOMMAIRE EXÉCUTIF & MATRICE DES MODULES -->
+    <!-- =================================================================== -->
+    <section class="slide">
+      <div class="gabon-ribbon">
+        <div class="ribbon-green"></div>
+        <div class="ribbon-yellow"></div>
+        <div class="ribbon-blue"></div>
+      </div>
+
+      <div class="slide-header">
+        <div class="brand-group">
+          <div>
+            <div class="brand-sub">ARCHITECTURE FONCTIONNELLE</div>
+            <div class="brand-title">Sommaire Exécutif & Table des Matières</div>
+          </div>
+        </div>
+        <span class="slide-number">Slide 02 / 15</span>
+      </div>
+
+      <div class="grid-3" style="margin: auto 0;">
+        <div class="card">
+          <div style="font-size: 18px; font-weight: 900; color: var(--opn-green); margin-bottom: 6px;">01 • Pilotage Stratégique</div>
+          <p style="font-size: 12px; margin-bottom: 8px;"><strong>Espace Décisionnel & PNA :</strong> Tableaux de bord ministériels, modélisation des CMM et surveillance des stocks de sécurité.</p>
+          <span style="font-size: 11px; font-weight: 700; color: var(--opn-blue);">Module Décisionnel DG</span>
+        </div>
+
+        <div class="card">
+          <div style="font-size: 18px; font-weight: 900; color: var(--opn-blue); margin-bottom: 6px;">02 • WMS & Importations</div>
+          <p style="font-size: 12px; margin-bottom: 8px;"><strong>Magasins Centraux & Douanes :</strong> Racks FEFO, dédouanement BAE, achats pré-qualifiés OMS et validation des COA.</p>
+          <span style="font-size: 11px; font-weight: 700; color: var(--opn-blue);">Module Logistique Amont</span>
+        </div>
+
+        <div class="card">
+          <div style="font-size: 18px; font-weight: 900; color: #eab308; margin-bottom: 6px;">03 • Distribution & IoT</div>
+          <p style="font-size: 12px; margin-bottom: 8px;"><strong>Convois & Télémétrie Froid :</strong> Suivi GPS temps réel, sondes thermiques +2°C/+8°C et application PWA hors-ligne.</p>
+          <span style="font-size: 11px; font-weight: 700; color: var(--opn-blue);">Module Distribution Aval</span>
+        </div>
+
+        <div class="card">
+          <div style="font-size: 18px; font-weight: 900; color: #8b5cf6; margin-bottom: 6px;">04 • Pharmacie & GMAO</div>
+          <p style="font-size: 12px; margin-bottom: 8px;"><strong>Clinique & Maintenance :</strong> Dispensation hospitalière nominative, maintenance des chambres froides et réserves RSSE.</p>
+          <span style="font-size: 11px; font-weight: 700; color: var(--opn-blue);">Module Hospitalier & Technique</span>
+        </div>
+
+        <div class="card">
+          <div style="font-size: 18px; font-weight: 900; color: #06b6d4; margin-bottom: 6px;">05 • Trésor & CNAMGS</div>
+          <p style="font-size: 12px; margin-bottom: 8px;"><strong>Intégrité Financière :</strong> Rapprochement bancaire DGCPT, facturation hospitalière dématérialisée et tiers-payant.</p>
+          <span style="font-size: 11px; font-weight: 700; color: var(--opn-blue);">Module Financier & Recouvrement</span>
+        </div>
+
+        <div class="card">
+          <div style="font-size: 18px; font-weight: 900; color: #ec4899; margin-bottom: 6px;">06 • Citoyen & Sécurité</div>
+          <p style="font-size: 12px; margin-bottom: 8px;"><strong>Portail Public & Socle :</strong> Mercuriale officielle des prix, simulateur de reste à charge, cryptographie AES-256.</p>
+          <span style="font-size: 11px; font-weight: 700; color: var(--opn-blue);">Portail Usager & Sécurité</span>
+        </div>
+      </div>
+
+      <div class="slide-footer">
+        <span>OPN Digital Hub 2026 — Plateforme d'Intérêt National</span>
+        <span>Présentation Structurée par Blocs Métiers</span>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- SLIDE 3 : VISION STRATÉGIQUE & PNA 2026-2027 -->
+    <!-- =================================================================== -->
+    <section class="slide">
+      <div class="gabon-ribbon">
+        <div class="ribbon-green"></div>
+        <div class="ribbon-yellow"></div>
+        <div class="ribbon-blue"></div>
+      </div>
+
+      <div class="slide-header">
+        <div class="brand-group">
+          <div>
+            <div class="brand-sub">CADRE POLITIQUE & GOUVERNANCE</div>
+            <div class="brand-title">Plan National d'Approvisionnement (PNA) & Souveraineté</div>
+          </div>
+        </div>
+        <span class="slide-number">Slide 03 / 15</span>
+      </div>
+
+      <div class="grid-2" style="margin: auto 0; gap: 32px;">
+        <div>
+          <h2 style="margin-bottom: 14px;">Une réponse institutionnelle aux ruptures de stock</h2>
+          <p style="margin-bottom: 16px;">
+            Le <strong>Plan National d’Approvisionnement (PNA) 2026-2027</strong> sanctuarise une enveloppe budgétaire de <strong>18,50 Milliards FCFA</strong> votée par l'État pour garantir l'autonomie sanitaire du Gabon.
+          </p>
+          <ul class="feature-list">
+            <li>
+              <span class="check-icon">✓</span>
+              <div><strong>Sécurisation des 350+ DCI prioritaires :</strong> Antipaludiques, antibiotiques majeurs, solutés massifs, anesthésiques et réactifs d’urgence.</div>
+            </li>
+            <li>
+              <span class="check-icon">✓</span>
+              <div><strong>Péréquation tarifaire nationale :</strong> Même prix garanti à Libreville, Makokou, Bitam ou Mayumba sans surcoût géographique.</div>
+            </li>
+            <li>
+              <span class="check-icon">✓</span>
+              <div><strong>Contrôle parlementaire et ministériel :</strong> Tableaux de bord de consommation mensuelle moyenne (CMM) et taux d'exécution budgétaire en direct.</div>
+            </li>
+          </ul>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 16px;">
+          <div class="card" style="border-left: 5px solid var(--opn-green);">
+            <div style="font-size: 11px; font-weight: 800; color: var(--opn-green); text-transform: uppercase;">Stock de Réserve Stratégique</div>
+            <div style="font-size: 22px; font-weight: 900; color: var(--opn-navy); margin: 4px 0;">6 Mois d'Autonomie</div>
+            <p style="font-size: 11.5px;">Sanctuarisés dans les chambres froides et magasins centraux d'Owendo pour faire face à toute crise épidémiologique.</p>
+          </div>
+
+          <div class="card" style="border-left: 5px solid var(--opn-blue);">
+            <div style="font-size: 11px; font-weight: 800; color: var(--opn-blue); text-transform: uppercase;">Centralisation des Achats Publics</div>
+            <div style="font-size: 22px; font-weight: 900; color: var(--opn-navy); margin: 4px 0;">-35% sur les Coûts d'Acquisition</div>
+            <p style="font-size: 11.5px;">Économies d'échelle massives réalisées grâce aux appels d'offres internationaux groupés sous certification OMS.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="slide-footer">
+        <span>Conformité avec les orientations du Ministère de la Santé</span>
+        <span>PNA 2026-2027 • République Gabonaise</span>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- SLIDE 4 : TABLEAU DE BORD DÉCISIONNEL & PILOTAGE MINISTÉRIEL -->
+    <!-- =================================================================== -->
+    <section class="slide">
+      <div class="gabon-ribbon">
+        <div class="ribbon-green"></div>
+        <div class="ribbon-yellow"></div>
+        <div class="ribbon-blue"></div>
+      </div>
+
+      <div class="slide-header">
+        <div class="brand-group">
+          <div>
+            <div class="brand-sub">MODULE 1 • PILOTAGE DU DIRECTOIRE</div>
+            <div class="brand-title">Espace Décisionnel & Supervision Nationale Live</div>
+          </div>
+        </div>
+        <span class="slide-number">Slide 04 / 15</span>
+      </div>
+
+      <div class="grid-3" style="margin: auto 0;">
+        <div class="card">
+          <div style="font-size: 28px; margin-bottom: 8px;">📊</div>
+          <h3>Indicateurs Macro-Sanitaires</h3>
+          <p>Supervision en temps réel du taux de disponibilité national (94.2%), des niveaux de stock provinciaux et des alertes de rupture prédictive à 30/60/90 jours.</p>
+        </div>
+
+        <div class="card">
+          <div style="font-size: 28px; margin-bottom: 8px;">🗺️</div>
+          <h3>Cartographie Interactive 9 Provinces</h3>
+          <p>Vue géospatiale des 9 antennes provinciales (Estuaire, Haut-Ogooué, Moyen-Ogooué, Ngounié, Nyanga, Ogooué-Ivindo, Ogooué-Lolo, Ogooué-Maritime, Woleu-Ntem).</p>
+        </div>
+
+        <div class="card">
+          <div style="font-size: 28px; margin-bottom: 8px;">⚡</div>
+          <h3>Directives Stratégiques & COD</h3>
+          <p>Module de saisie et de transmission immédiate des ordres de mobilisation et des arrêtés de réquisition sanitaire en cas d'urgence COD (Centre Opérationnel de Décision).</p>
+        </div>
+      </div>
+
+      <div class="card" style="background: #f1f5f9; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between;">
+        <div>
+          <span style="font-size: 11px; font-weight: 800; color: #475569; text-transform: uppercase;">Génération Documentaire Officielle :</span>
+          <span style="font-size: 12px; font-weight: 700; color: #0f172a; margin-left: 8px;">Rapport Exécutif de Gouvernance A4 PDF • Tableau de Bord Mensuel Ministère</span>
+        </div>
+        <span style="font-size: 11px; font-weight: 800; color: var(--opn-green);">✓ Export 1-Clic</span>
+      </div>
+
+      <div class="slide-footer">
+        <span>Tableau de bord réservé au Directeur Général, DAF et Inspecteurs Généraux</span>
+        <span>OPN Digital Hub 2026</span>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- SLIDE 5 : WMS & ENTREPÔTS CENTRAUX D'OWENDO -->
+    <!-- =================================================================== -->
+    <section class="slide">
+      <div class="gabon-ribbon">
+        <div class="ribbon-green"></div>
+        <div class="ribbon-yellow"></div>
+        <div class="ribbon-blue"></div>
+      </div>
+
+      <div class="slide-header">
+        <div class="brand-group">
+          <div>
+            <div class="brand-sub">MODULE 2 • GESTION DES ENTREPÔTS</div>
+            <div class="brand-title">WMS Racks, Adressage 3D & Politique FEFO</div>
+          </div>
+        </div>
+        <span class="slide-number">Slide 05 / 15</span>
+      </div>
+
+      <div class="grid-2" style="margin: auto 0; gap: 28px;">
+        <div class="card">
+          <h3>Fonctionnalités Logistiques Avancées</h3>
+          <ul class="feature-list" style="margin-top: 12px;">
+            <li><span class="check-icon">✓</span><span><strong>Cartographie Racks 3D :</strong> Adressage précis par allée, travée, niveau et alvéole au Hub Central d'Owendo.</span></li>
+            <li><span class="check-icon">✓</span><span><strong>Règle FEFO Stricte :</strong> Premier Expiré, Premier Sorti (First Expired, First Out) avec blocage informatique automatique des lots à DLC &lt; 6 mois.</span></li>
+            <li><span class="check-icon">✓</span><span><strong>Sas de Quarantaine :</strong> Isolement physique et digital des lots en attente de libération d'analyse ou sous enquête DMP.</span></li>
+            <li><span class="check-icon">✓</span><span><strong>Scan Code-barres / GS1 :</strong> Terminaux mobiles durcis pour le picking, le réapprovisionnement et l'inventaire tournant.</span></li>
+          </ul>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 14px;">
+          <div class="metric-box">
+            <div class="metric-label">Capacité de Stockage Hub Owendo</div>
+            <div class="metric-value">12 500 Palettes</div>
+            <p style="font-size: 11px;">Entrepôt climatisé 15°C–25°C + 4 Chambres Froides négatives et positives.</p>
+          </div>
+          <div class="metric-box">
+            <div class="metric-label">Taux d'Exactitude des Stocks</div>
+            <div class="metric-value">99.85%</div>
+            <p style="font-size: 11px;">Rapprochement permanent entre stocks physiques et écritures WMS.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="slide-footer">
+        <span>Hub Central d'Owendo & 9 Magasins Régionaux Interconnectés</span>
+        <span>Module WMS-OPN v2.6</span>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- SLIDE 6 : APPROVISIONNEMENTS INTERNATIONAUX & DOUANES -->
+    <!-- =================================================================== -->
+    <section class="slide">
+      <div class="gabon-ribbon">
+        <div class="ribbon-green"></div>
+        <div class="ribbon-yellow"></div>
+        <div class="ribbon-blue"></div>
+      </div>
+
+      <div class="slide-header">
+        <div class="brand-group">
+          <div>
+            <div class="brand-sub">MODULE 3 • COMMERCE EXTÉRIEUR & DOUANES</div>
+            <div class="brand-title">Approvisionnements Internationaux & Dédouanement BAE</div>
+          </div>
+        </div>
+        <span class="slide-number">Slide 06 / 15</span>
+      </div>
+
+      <div class="grid-3" style="margin: auto 0;">
+        <div class="card">
+          <div style="font-size: 24px; margin-bottom: 6px;">🌍</div>
+          <h3>Laboratoires Mondiaux</h3>
+          <p>Gestion du panel de 45+ fabricants certifiés OMS (France, Suisse, Inde, Maroc, Belgique). Suivi des bons de commande internationaux multidevises (EUR, USD, INR).</p>
+        </div>
+
+        <div class="card">
+          <div style="font-size: 24px; margin-bottom: 6px;">🚢</div>
+          <h3>Incoterms & Fret Multimodal</h3>
+          <p>Simulateur des coûts de débarquement (Landed Costs) selon les Incoterms CIF Port d’Owendo, FOB Anvers/Mumbai ou CIP Aéroport Léon Mba.</p>
+        </div>
+
+        <div class="card">
+          <div style="font-size: 24px; margin-bottom: 6px;">📑</div>
+          <h3>Douanes & BAE Express</h3>
+          <p>Génération dématérialisée de la Déclaration d’Importation OPN, franchises douanières pour médicaments d’urgence et obtention du Bon à Enlever (BAE).</p>
+        </div>
+      </div>
+
+      <div class="card" style="border: 1px solid var(--opn-green); background: #f0fdf4; padding: 12px 18px;">
+        <p style="font-size: 11.5px; color: #14532d;">
+          <strong>Contrôle Qualité Pré-Entrée :</strong> Tout lot débarqué fait l'objet d'un contrôle de conformité documentaire (COA fabricant, AMM Gabon) avant autorisation d'intégration aux racks de dispensation.
+        </p>
+      </div>
+
+      <div class="slide-footer">
+        <span>Conformité avec les protocoles de la Direction du Médicament et de la Pharmacie (DMP)</span>
+        <span>Module Achats-OPN</span>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- SLIDE 7 : DISTRIBUTION MULTIMODALE & TÉLÉMÉTRIE IOT -->
+    <!-- =================================================================== -->
+    <section class="slide">
+      <div class="gabon-ribbon">
+        <div class="ribbon-green"></div>
+        <div class="ribbon-yellow"></div>
+        <div class="ribbon-blue"></div>
+      </div>
+
+      <div class="slide-header">
+        <div class="brand-group">
+          <div>
+            <div class="brand-sub">MODULE 4 • LOGISTIQUE DU DERNIER KILOMÈTRE</div>
+            <div class="brand-title">Distribution Multimodale & Télémétrie Chaîne du Froid IoT</div>
+          </div>
+        </div>
+        <span class="slide-number">Slide 07 / 15</span>
+      </div>
+
+      <div class="grid-2" style="margin: auto 0; gap: 30px;">
+        <div>
+          <h3 style="margin-bottom: 12px;">Traçabilité Active sur tous les Terrains</h3>
+          <ul class="feature-list">
+            <li><span class="check-icon">✓</span><span><strong>Convois Routiers Sécurisés :</strong> Flotte de camions frigorifiques sous escorte sur la RN1, RN2 et les axes difficiles en latérite.</span></li>
+            <li><span class="check-icon">✓</span><span><strong>Fret Ferroviaire Setrag :</strong> Wagons dédiés conteneurisés Owendo ➔ Ndjolé ➔ Lastourville ➔ Franceville.</span></li>
+            <li><span class="check-icon">✓</span><span><strong>Liaisons Maritimes & Fluviales :</strong> Desserte maritime pour Port-Gentil et navettes fluviales dans l'Ogooué et la lagune Fernan Vaz.</span></li>
+            <li><span class="check-icon">✓</span><span><strong>Application Chauffeur PWA :</strong> Pointage GPS des étapes (Waypoints) et émargement des BL en mode 100% hors-ligne.</span></li>
+          </ul>
+        </div>
+
+        <div class="card" style="background: var(--opn-navy); color: white;">
+          <div style="font-size: 11px; font-weight: 800; color: #38bdf8; text-transform: uppercase;">Capteurs Connectés IoT en Temps Réel</div>
+          <div style="font-size: 28px; font-weight: 900; color: #4ade80; font-family: 'JetBrains Mono'; margin: 8px 0;">+4.2°C</div>
+          <p style="color: #cbd5e1; font-size: 11.5px; margin-bottom: 14px;">
+            Sondes thermiques étalonnées émettant toutes les 60 secondes. En cas d’excursion thermique (&gt; +8°C ou &lt; +2°C), une alerte rouge est instantanément projetée au COD National.
+          </p>
+          <div style="background: rgba(255,255,255,0.1); padding: 8px 12px; border-radius: 6px; font-size: 11px; font-weight: 700; color: #facc15;">
+            🛡️ Zéro rupture de la chaîne du froid sur les vaccins et insulines
+          </div>
+        </div>
+      </div>
+
+      <div class="slide-footer">
+        <span>Couverture logistique intégrale des 9 provinces du Gabon</span>
+        <span>Module Distribution-IoT v2.6</span>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- SLIDE 8 : PHARMACIE HOSPITALIÈRE & DISPENSATION CLINIQUE -->
+    <!-- =================================================================== -->
+    <section class="slide">
+      <div class="gabon-ribbon">
+        <div class="ribbon-green"></div>
+        <div class="ribbon-yellow"></div>
+        <div class="ribbon-blue"></div>
+      </div>
+
+      <div class="slide-header">
+        <div class="brand-group">
+          <div>
+            <div class="brand-sub">MODULE 5 • GESTION PHARMACEUTIQUE CLINIQUE</div>
+            <div class="brand-title">Pharmacie Hospitalière & Dispensation Nominative</div>
+          </div>
+        </div>
+        <span class="slide-number">Slide 08 / 15</span>
+      </div>
+
+      <div class="grid-3" style="margin: auto 0;">
+        <div class="card">
+          <div style="font-size: 24px; margin-bottom: 6px;">💊</div>
+          <h3>Dispensation au Lit du Patient</h3>
+          <p>Délivrance informatisée des ordonnances avec contrôle croisé des posologies, des contre-indications et traçabilité par dossier médical patient (DMP).</p>
+        </div>
+
+        <div class="card">
+          <div style="font-size: 24px; margin-bottom: 6px;">🏥</div>
+          <h3>Stocks des Services de Soins</h3>
+          <p>Gestion des armoires à pharmacie des urgences, blocs opératoires, réanimations, maternités et médecine interne avec réassort automatique piloté par dotation.</p>
+        </div>
+
+        <div class="card">
+          <div style="font-size: 24px; margin-bottom: 6px;">🚨</div>
+          <h3>Anticipation des Péremptions</h3>
+          <p>Alertes dynamiques à 90, 60 et 30 jours permettant le re-dispatching vers des services à forte rotation avant toute perte financière.</p>
+        </div>
+      </div>
+
+      <div class="card" style="background: #f8fafc; border: 1.5px dashed var(--opn-blue); padding: 14px 20px;">
+        <div style="font-size: 12px; color: var(--opn-navy); font-weight: 700;">
+          Déployé dans les CHU de Libreville (CHUL, CHUO, CHUMEF), les Centres Hospitaliers Régionaux (CHR) et les Hôpitaux Départementaux.
+        </div>
+      </div>
+
+      <div class="slide-footer">
+        <span>Sécurisation du circuit du médicament hospitalier</span>
+        <span>Module Pharmacie-Clinique</span>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- SLIDE 9 : GMAO BIOMÉDICALE & MAINTENANCE FRIGORIFIQUE -->
+    <!-- =================================================================== -->
+    <section class="slide">
+      <div class="gabon-ribbon">
+        <div class="ribbon-green"></div>
+        <div class="ribbon-yellow"></div>
+        <div class="ribbon-blue"></div>
+      </div>
+
+      <div class="slide-header">
+        <div class="brand-group">
+          <div>
+            <div class="brand-sub">MODULE 6 • GÉNIE BIOMÉDICAL & TECHNIQUE</div>
+            <div class="brand-title">GMAO Maintenance & Résilience des Équipements Critiques</div>
+          </div>
+        </div>
+        <span class="slide-number">Slide 09 / 15</span>
+      </div>
+
+      <div class="grid-2" style="margin: auto 0; gap: 30px;">
+        <div>
+          <h3 style="margin-bottom: 12px;">Parc Technique sous Supervision</h3>
+          <ul class="feature-list">
+            <li><span class="check-icon">✓</span><span><strong>Chambres Froides Positives & Négatives :</strong> Suivi des compresseurs, du gaz frigorigène R134a/R404a et des dégextrages automatiques.</span></li>
+            <li><span class="check-icon">✓</span><span><strong>Groupes Électrogènes de Secours :</strong> Contrôle des niveaux de gasoil, heures de fonctionnement et basculement automatique inverseur.</span></li>
+            <li><span class="check-icon">✓</span><span><strong>Autoclaves & Stérilisateurs :</strong> Cycles de qualification et validation thermique annuelle.</span></li>
+            <li><span class="check-icon">✓</span><span><strong>Bons d'Intervention Numériques :</strong> Ordres de travail (OT) préventifs et curatifs avec signatures électroniques.</span></li>
+          </ul>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 14px;">
+          <div class="metric-box">
+            <div class="metric-label">Disponibilité des Équipements Froid</div>
+            <div class="metric-value">99.4%</div>
+            <p style="font-size: 11px;">Grâce au plan de maintenance préventive systématique.</p>
+          </div>
+          <div class="metric-box">
+            <div class="metric-label">Temps Moyen de Résolution (MTTR)</div>
+            <div class="metric-value">&lt; 2h30</div>
+            <p style="font-size: 11px;">Interventions rapides des brigades techniques OPN en province.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="slide-footer">
+        <span>Garantie de continuité énergétique et frigorifique des stocks sensibles</span>
+        <span>Module GMAO-Maintenance</span>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- SLIDE 10 : RÉSERVES STRATÉGIQUES D'ÉTAT & GESTION DE CRISE -->
+    <!-- =================================================================== -->
+    <section class="slide">
+      <div class="gabon-ribbon">
+        <div class="ribbon-green"></div>
+        <div class="ribbon-yellow"></div>
+        <div class="ribbon-blue"></div>
+      </div>
+
+      <div class="slide-header">
+        <div class="brand-group">
+          <div>
+            <div class="brand-sub">MODULE 7 • SÉCURITÉ NATIONALE & PLAN D'URGENCE</div>
+            <div class="brand-title">Réserves Stratégiques d'État (RSSE) & Gestion des Crises COD</div>
+          </div>
+        </div>
+        <span class="slide-number">Slide 10 / 15</span>
+      </div>
+
+      <div class="grid-3" style="margin: auto 0;">
+        <div class="card" style="border-top: 4px solid #ef4444;">
+          <h3>Réserve Inviolable d'Urgence</h3>
+          <p>Stock national sanctuarisé de sérums antivenimeux, solutés massifs, anesthésiques, insulines et réactifs d’épidémies (choléra, fièvres hémorragiques, mpox).</p>
+        </div>
+
+        <div class="card" style="border-top: 4px solid #f59e0b;">
+          <h3>Procédure de Déstockage Souverain</h3>
+          <p>Déblocage soumis au double visa du Directeur Général de l'OPN et du Ministre de la Santé, avec PV de réquisition officiel horodaté et traçabilité inviolable.</p>
+        </div>
+
+        <div class="card" style="border-top: 4px solid var(--opn-green);">
+          <h3>Déploiement Éclair 24h/24</h3>
+          <p>Conditionnement en malles tactiques isothermes prêtes à l'embarquement immédiat par voie aérienne militaire ou convois routiers rapides vers les zones d'alerte.</p>
+        </div>
+      </div>
+
+      <div class="card" style="background: #fef2f2; border: 1px solid #fecaca; padding: 12px 18px;">
+        <p style="font-size: 11.5px; color: #991b1b;">
+          <strong>Cadre Réglementaire :</strong> Conforme au Décret National portant organisation des stocks d’urgence sanitaire de la République Gabonaise.
+        </p>
+      </div>
+
+      <div class="slide-footer">
+        <span>Protection civile et sécurité sanitaire de la Nation</span>
+        <span>Module RSSE-Crise</span>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- SLIDE 11 : INTÉGRATION FINANCIÈRE & TRÉSOR PUBLIC (DGCPT) -->
+    <!-- =================================================================== -->
+    <section class="slide">
+      <div class="gabon-ribbon">
+        <div class="ribbon-green"></div>
+        <div class="ribbon-yellow"></div>
+        <div class="ribbon-blue"></div>
+      </div>
+
+      <div class="slide-header">
+        <div class="brand-group">
+          <div>
+            <div class="brand-sub">MODULE 8 • COMPTABILITÉ PUBLIQUE & FINANCES</div>
+            <div class="brand-title">Rapprochement Bancaire Automatisé & Mandatement DGCPT</div>
+          </div>
+        </div>
+        <span class="slide-number">Slide 11 / 15</span>
+      </div>
+
+      <div class="grid-2" style="margin: auto 0; gap: 30px;">
+        <div class="card">
+          <h3>Chaîne de Valeur Financière Dématérialisée</h3>
+          <ul class="feature-list" style="margin-top: 10px;">
+            <li><span class="check-icon">✓</span><span><strong>Titres de Perception Numériques :</strong> Émission automatique des ordres de recettes pour chaque vente hospitalière.</span></li>
+            <li><span class="check-icon">✓</span><span><strong>Lettrage Bancaire DGCPT :</strong> Synchronisation quotidienne avec les relevés du Trésor Public gabonais.</span></li>
+            <li><span class="check-icon">✓</span><span><strong>Zéro Écart Toléré :</strong> Algorithme de réconciliation au centime près des encaissements effectifs.</span></li>
+            <li><span class="check-icon">✓</span><span><strong>États de Rapprochement PDF :</strong> Génération certifiée conforme aux exigences de la Cour des Comptes.</span></li>
+          </ul>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 14px;">
+          <div class="metric-box">
+            <div class="metric-label">Taux de Recouvrement Hospitalier</div>
+            <div class="metric-value" style="color: var(--opn-green);">92.8%</div>
+            <p style="font-size: 11px;">Augmentation de +45% par rapport aux circuits manuels traditionnels.</p>
+          </div>
+          <div class="metric-box">
+            <div class="metric-label">Délai Moyen de Lettrage</div>
+            <div class="metric-value">&lt; 24 Heures</div>
+            <p style="font-size: 11px;">Visibilité financière en direct sur les comptes OPN au Trésor.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="slide-footer">
+        <span>Régularité comptable et orthodoxie financière de l'État</span>
+        <span>Module Finances-Trésor</span>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- SLIDE 12 : PRISE EN CHARGE & TIERS-PAYANT CNAMGS -->
+    <!-- =================================================================== -->
+    <section class="slide">
+      <div class="gabon-ribbon">
+        <div class="ribbon-green"></div>
+        <div class="ribbon-yellow"></div>
+        <div class="ribbon-blue"></div>
+      </div>
+
+      <div class="slide-header">
+        <div class="brand-group">
+          <div>
+            <div class="brand-sub">MODULE 9 • PROTECTION SOCIALE & COUVERTURE UNIVERSELLE</div>
+            <div class="brand-title">Interconnexion CNAMGS & Tiers-Payant Dématérialisé</div>
+          </div>
+        </div>
+        <span class="slide-number">Slide 12 / 15</span>
+      </div>
+
+      <div class="grid-3" style="margin: auto 0;">
+        <div class="card">
+          <div style="font-size: 24px; margin-bottom: 6px;">🏛️</div>
+          <h3>Les 3 Régimes Légaux</h3>
+          <p>Prise en compte instantanée des régimes GEF (Agents de l'État), Travailleurs Salariés/Indépendants et Gabonais Économiquement Faibles (GEF / Indigents).</p>
+        </div>
+
+        <div class="card">
+          <div style="font-size: 24px; margin-bottom: 6px;">🧾</div>
+          <h3>Télétransmission Directe</h3>
+          <p>Envoi numérique des bordereaux de facturation aux services de liquidation de la CNAMGS, réduisant les délais de remboursement de 180 à 25 jours.</p>
+        </div>
+
+        <div class="card">
+          <div style="font-size: 24px; margin-bottom: 6px;">⚖️</div>
+          <h3>Ticket Modérateur Garanti</h3>
+          <p>Calcul automatique de la part patient exacte (0% à 20% max selon la pathologie), interdisant toute surfacturation arbitraire en pharmacie.</p>
+        </div>
+      </div>
+
+      <div class="card" style="background: #eff6ff; border: 1px solid #bfdbfe; padding: 12px 18px;">
+        <p style="font-size: 11.5px; color: #1e40af;">
+          <strong>Impact Social Majeur :</strong> Plus de 1,2 million d’assurés gabonais bénéficient d'un accès immédiat aux médicaments sans avance de frais prohibitive.
+        </p>
+      </div>
+
+      <div class="slide-footer">
+        <span>Partenariat institutionnel OPN • CNAMGS</span>
+        <span>Module Tiers-Payant v2.6</span>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- SLIDE 13 : PORTAIL CITOYEN & MERCURIALE NATIONALE DES PRIX -->
+    <!-- =================================================================== -->
+    <section class="slide">
+      <div class="gabon-ribbon">
+        <div class="ribbon-green"></div>
+        <div class="ribbon-yellow"></div>
+        <div class="ribbon-blue"></div>
+      </div>
+
+      <div class="slide-header">
+        <div class="brand-group">
+          <div>
+            <div class="brand-sub">MODULE 10 • TRANSPARENCE PUBLIQUE & SERVICE AUX USAGERS</div>
+            <div class="brand-title">Portail Public Citoyen & Mercuriale Officielle</div>
+          </div>
+        </div>
+        <span class="slide-number">Slide 13 / 15</span>
+      </div>
+
+      <div class="grid-2" style="margin: auto 0; gap: 30px;">
+        <div>
+          <h3 style="margin-bottom: 12px;">4 Services Numériques Ouverts aux Citoyens</h3>
+          <ul class="feature-list">
+            <li><span class="check-icon">✓</span><span><strong>Moteur de Recherche DCI :</strong> Vérification en direct des stocks disponibles dans les pharmacies hospitalières et officines.</span></li>
+            <li><span class="check-icon">✓</span><span><strong>Mercuriale Officielle :</strong> Grille tarifaire légale en Franc CFA (XAF) certifiée par le Ministère.</span></li>
+            <li><span class="check-icon">✓</span><span><strong>Simulateur de Reste à Charge :</strong> Estimation immédiate du montant à régler selon la carte CNAMGS.</span></li>
+            <li><span class="check-icon">✓</span><span><strong>Signalement Anti-Fraude :</strong> Déclaration citoyenne anonyme des surtarifications et abus tarifaires.</span></li>
+          </ul>
+        </div>
+
+        <div class="card" style="background: #f8fafc; border: 1.5px solid var(--opn-green);">
+          <div style="font-size: 11px; font-weight: 800; color: var(--opn-green); text-transform: uppercase;">Engagement Qualité de Service Public</div>
+          <h3 style="margin: 6px 0; color: var(--opn-navy);">Pharmacies de Garde 24/7 Géolocalisées</h3>
+          <p style="font-size: 11.5px; margin-bottom: 12px;">
+            Cartographie interactive des officines ouvertes la nuit, les week-ends et jours fériés sur Libreville, Akanda, Owendo, Port-Gentil, Franceville et toutes les provinces.
+          </p>
+          <div style="font-size: 11px; font-weight: 800; color: var(--opn-blue);">
+            Accessible gratuitement sur web & mobile sans création de compte.
+          </div>
+        </div>
+      </div>
+
+      <div class="slide-footer">
+        <span>Transparence républicaine et lutte contre les marchés illicites</span>
+        <span>Portail Citoyen OPN</span>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- SLIDE 14 : SOCLE TECHNIQUE & SÉCURITÉ DE NIVEAU MILITAIRE -->
+    <!-- =================================================================== -->
+    <section class="slide">
+      <div class="gabon-ribbon">
+        <div class="ribbon-green"></div>
+        <div class="ribbon-yellow"></div>
+        <div class="ribbon-blue"></div>
+      </div>
+
+      <div class="slide-header">
+        <div class="brand-group">
+          <div>
+            <div class="brand-sub">INFRASTRUCTURE & SÉCURITÉ</div>
+            <div class="brand-title">Socle Technologique Souverain & Haute Résilience</div>
+          </div>
+        </div>
+        <span class="slide-number">Slide 14 / 15</span>
+      </div>
+
+      <div class="grid-4" style="margin: auto 0;">
+        <div class="card">
+          <div style="font-size: 20px; font-weight: 900; color: var(--opn-green); margin-bottom: 6px;">🔐 Chiffrement</div>
+          <p style="font-size: 11.5px;">Chiffrement <strong>AES-256</strong> au repos, <strong>TLS 1.3</strong> en transit et signatures électroniques légales <strong>SHA-256</strong>.</p>
+        </div>
+
+        <div class="card">
+          <div style="font-size: 20px; font-weight: 900; color: var(--opn-blue); margin-bottom: 6px;">👥 RBAC Granulaire</div>
+          <p style="font-size: 11.5px;">14 profils d'accès stricts (DG, DAF, Pharmacien, Logisticien, Trésor, Douanes, Gouvernance).</p>
+        </div>
+
+        <div class="card">
+          <div style="font-size: 20px; font-weight: 900; color: #8b5cf6; margin-bottom: 6px;">⚡ Cluster API</div>
+          <p style="font-size: 11.5px;">Architecture multi-processus 5 workers + proxy de charge garantissant <strong>99.98% de SLA</strong>.</p>
+        </div>
+
+        <div class="card">
+          <div style="font-size: 20px; font-weight: 900; color: #eab308; margin-bottom: 6px;">📡 Offline-First</div>
+          <p style="font-size: 11.5px;">PWA résiliente permettant la poursuite des opérations logistiques en zone blanche sans GSM.</p>
+        </div>
+      </div>
+
+      <div class="card" style="background: #f1f5f9; padding: 12px 18px;">
+        <p style="font-size: 11px; color: #334155;">
+          <strong>Hébergement Souverain :</strong> Données de santé hébergées exclusivement sur les serveurs nationaux de l’État gabonais (Datacenter ANINF / OPN Libreville), sous souveraineté juridique nationale.
+        </p>
+      </div>
+
+      <div class="slide-footer">
+        <span>Normes de sécurité de niveau Défense & Santé Publique</span>
+        <span>Infrastructure OPN Digital Hub 2026</span>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- SLIDE 15 : DÉPLOIEMENT, TARIFICATION & APPEL À L'ACTION (CTA FINAL) -->
+    <!-- =================================================================== -->
+    <section class="slide slide-dark">
+      <div class="gabon-ribbon">
+        <div class="ribbon-green"></div>
+        <div class="ribbon-yellow"></div>
+        <div class="ribbon-blue"></div>
+      </div>
+
+      <div class="slide-header slide-header-dark">
+        <div class="brand-group">
+          <div>
+            <div class="brand-sub">ENGAGEMENT INSTITUTIONNEL & DÉPLOIEMENT</div>
+            <div class="brand-title">Méthodologie de Déploiement & Contacts Officiels</div>
+          </div>
+        </div>
+        <span class="slide-number">Slide 15 / 15</span>
+      </div>
+
+      <div style="margin: auto 0;">
+        <div class="grid-3" style="margin-bottom: 22px;">
+          <div class="card card-dark">
+            <div style="font-size: 14px; font-weight: 900; color: var(--opn-yellow);">Phase 1 • Cadrage (Mois 1)</div>
+            <p style="font-size: 11.5px; margin-top: 4px;">Audit d'infrastructure sur site, inventaire physique initial et paramétrage du référentiel DCI.</p>
+          </div>
+          <div class="card card-dark">
+            <div style="font-size: 14px; font-weight: 900; color: #38bdf8;">Phase 2 • Déploiement (Mois 2-3)</div>
+            <p style="font-size: 11.5px; margin-top: 4px;">Installation WMS, pose des balises IoT sur les camions, connexion Trésor/CNAMGS et formation des équipes.</p>
+          </div>
+          <div class="card card-dark">
+            <div style="font-size: 14px; font-weight: 900; color: var(--opn-green);">Phase 3 • Exploitation 24/7</div>
+            <p style="font-size: 11.5px; margin-top: 4px;">Supervision live par le COD National, assistance technique continue et audits de conformité périodiques.</p>
+          </div>
+        </div>
+
+        <div style="background: rgba(0, 166, 81, 0.15); border: 1.5px solid var(--opn-green); padding: 20px 24px; border-radius: 14px; display: flex; align-items: center; justify-content: space-between;">
+          <div>
+            <h2 style="color: white; font-size: 20px; margin-bottom: 4px;">Demander une Démonstration Exécutive ou un Audit</h2>
+            <p style="color: #cbd5e1; font-size: 12px;">Nos ingénieurs et pharmaciens inspecteurs se tiennent à la disposition de votre structure sanitaire.</p>
+          </div>
+          <div style="text-align: right;">
+            <div style="font-size: 16px; font-weight: 900; color: var(--opn-yellow);">Standard : +241 11 72 00 00</div>
+            <div style="font-size: 12px; color: white;">Email : contact@opn.ga • https://hub.opn.ga</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="slide-footer slide-footer-dark">
+        <span>Office Pharmaceutique National — République Gabonaise</span>
+        <span>Document officiel de présentation commerciale et technique</span>
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    // Téléchargement direct du PDF multi-pages A4 Paysage
+    function downloadPdfDeck() {
+      const element = document.getElementById('deck-root');
+      const opt = {
+        margin: [0, 0, 0, 0],
+        filename: 'Plaquette_Commerciale_OPN_Digital_Hub_2026.pdf',
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { 
+          scale: 2, 
+          useCORS: true, 
+          letterRendering: true,
+          logging: false 
+        },
+        jsPDF: { 
+          unit: 'mm', 
+          format: 'a4', 
+          orientation: 'landscape' 
+        }
+      };
+      html2pdf().set(opt).from(element).save();
+    }
+  </script>
+</body>
+</html>

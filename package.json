@@ -1,0 +1,33 @@
+{
+  "name": "opn-digital-hub-gabon",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "api:cluster": "node scripts/opn-api-cluster.mjs",
+    "start:opn": "powershell -ExecutionPolicy Bypass -File scripts/start-opn.ps1"
+  },
+  "dependencies": {
+    "canvas-confetti": "^1.9.4",
+    "clsx": "^2.1.1",
+    "html2pdf.js": "^0.14.0",
+    "laravel-echo": "^2.5.0",
+    "lucide-react": "^0.475.0",
+    "pusher-js": "^8.6.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwind-merge": "^3.0.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.5.2",
+    "tailwindcss": "^3.4.17",
+    "vite": "^6.1.0"
+  }
+}
