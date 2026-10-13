@@ -11,8 +11,6 @@ import {
   QrCode, 
   ShoppingCart, 
   FileCheck, 
-  Settings, 
-  Headphones, 
   Video, 
   Navigation,
   Building2,
@@ -36,7 +34,7 @@ import {
   ChevronsRight,
   PanelLeftClose
 } from 'lucide-react';
-import { getCodeRole, getRoleModules, getRoleCapabilities } from '../../data/rbacMatrix';
+import { getCodeRole, getRoleModules } from '../../data/rbacMatrix';
 import OpnLogo from './OpnLogo';
 
 const ICON_BY_MODULE = {
@@ -79,12 +77,9 @@ export default function Sidebar({
   onCollapse,
   onExpand,
   onHide,
-  onOpenProfile,
-  onOpenHelpdesk,
 }) {
   const user = currentUser || activePersona;
   const codeRole = getCodeRole(user);
-  const caps = getRoleCapabilities(codeRole);
   const menuItems = getRoleModules(codeRole).map((item) => ({
     ...item,
     icon: codeRole === 'CONVOYEUR' && item.id === 'workspace'
@@ -153,53 +148,6 @@ export default function Sidebar({
           </button>
         </div>
       )}
-
-      <div className="shrink-0">
-        <div className={`border-b border-white/10 bg-transparent ${collapsed ? 'p-2' : 'p-3.5'}`}>
-          <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-2.5'}`}>
-            <img 
-              src={user.avatar || "https://images.unsplash.com/photo-1531384441138-2736e62e0919?w=150&h=150&fit=crop&crop=faces&auto=format&q=80"}
-              alt={user.nom}
-              className="w-9 h-9 rounded-full object-cover border border-white/30 shadow-sm"
-            />
-            {!collapsed && (
-            <div className="min-w-0 flex-1">
-              <h4 className="text-xs font-bold text-white truncate">{user.nom}</h4>
-              <p className="text-[11px] text-emerald-300 font-bold truncate">{user.role}</p>
-              <p className="text-[10px] text-blue-100/70 truncate">{user.entite}</p>
-            </div>
-            )}
-          </div>
-
-          {!collapsed && (
-          <p className="mt-2 text-[9px] font-semibold text-blue-100/80 leading-snug bg-white/10 border border-white/10 rounded px-2 py-1.5">
-            {caps.hierarchyLabel}
-          </p>
-          )}
-
-          <div className={`flex items-center gap-1.5 pt-2 border-t border-white/10 ${collapsed ? 'mt-2 flex-col' : 'mt-2.5'}`}>
-            <button
-              onClick={onOpenProfile}
-              className={`${collapsed ? 'w-full' : 'flex-1'} py-1 px-2 rounded bg-white/10 hover:bg-white/20 border border-white/15 text-[10px] font-bold text-white flex items-center justify-center gap-1 transition-colors`}
-              title="Consulter le profil et les permissions"
-            >
-              <Settings className="w-3 h-3 text-blue-100" />
-              {!collapsed && <span>Mon Profil</span>}
-            </button>
-
-            <button
-              onClick={() => {
-                if (onOpenHelpdesk) onOpenHelpdesk(user);
-              }}
-              className={`${collapsed ? 'w-full' : 'flex-1'} py-1 px-2 rounded bg-amber-400/15 hover:bg-amber-400/25 border border-amber-300/30 text-[10px] font-bold text-amber-100 flex items-center justify-center gap-1 transition-colors`}
-              title="Demande de support IT et réinitialisation de mot de passe"
-            >
-              <Headphones className="w-3 h-3 text-amber-200" />
-              {!collapsed && <span>Helpdesk IT</span>}
-            </button>
-          </div>
-        </div>
-      </div>
 
       <nav className={`flex-1 min-h-0 overflow-y-auto space-y-1 ${collapsed ? 'p-2' : 'p-3'}`}>
           {!collapsed && (

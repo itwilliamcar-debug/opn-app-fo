@@ -140,9 +140,65 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
     }
   };
 
+  const personaList = (
+    <div className="p-4 rounded-md bg-slate-50 border border-slate-200 flex flex-col min-h-0">
+      <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+        Profils par défaut
+      </span>
+      <p className="text-[11px] text-slate-500 mt-1 mb-3">
+        Ouvrez une session de démonstration sans saisir les identifiants.
+      </p>
+      <div className="space-y-2 overflow-y-auto max-h-[52vh] pr-1">
+        {USERS_PERSONAS.map((p) => {
+          const isConnecting = connectingPersonaId === p.id;
+          return (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => handleInstantPersonaLogin(p)}
+              className={`w-full p-2.5 rounded bg-white border text-left transition-all flex items-center justify-between gap-2 shadow-xs ${
+                isConnecting
+                  ? 'border-[#00A651] ring-1 ring-[#00A651]/40'
+                  : 'border-slate-200 hover:border-[#2E68B4]'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <img
+                  src={p.avatar}
+                  alt=""
+                  className="w-8 h-8 rounded-full object-cover border border-slate-200 shrink-0"
+                />
+                <div className="min-w-0">
+                  <p className="font-bold text-xs text-slate-900 truncate">{p.nom}</p>
+                  <p className="text-[10px] text-[#2E68B4] font-semibold truncate">{p.role}</p>
+                </div>
+              </div>
+              <span
+                className={`px-2 py-1 text-[10px] font-bold rounded shrink-0 transition-colors shadow-xs inline-flex items-center gap-1 ${
+                  isConnecting
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-[#2E68B4] hover:bg-[#215091] text-white'
+                }`}
+              >
+                {isConnecting ? (
+                  <>
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    …
+                  </>
+                ) : (
+                  'Ouvrir'
+                )}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="w-full max-w-xl bg-white border border-slate-200 rounded-lg p-6 sm:p-7 shadow-2xl space-y-5 relative max-h-[92vh] overflow-y-auto">
+      <div className={`w-full ${requires2FA ? 'max-w-xl' : 'max-w-5xl'} bg-white border border-slate-200 rounded-lg p-6 sm:p-7 shadow-2xl space-y-5 relative max-h-[92vh] overflow-y-auto`}>
         
         <button
           onClick={onClose}
@@ -179,70 +235,12 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
           </div>
         )}
 
-        {!requires2FA && (
-          <div className="p-4 rounded-md bg-slate-50 border border-slate-200 space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                Comptes de démonstration
-              </span>
-            </div>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {USERS_PERSONAS.map((p) => {
-                const isConnecting = connectingPersonaId === p.id;
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => handleInstantPersonaLogin(p)}
-                    className={`p-2.5 rounded bg-white border text-left transition-all flex items-center justify-between gap-2 shadow-xs ${
-                      isConnecting
-                        ? 'border-[#00A651] ring-1 ring-[#00A651]/40'
-                        : 'border-slate-200 hover:border-[#2E68B4]'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <img 
-                        src={p.avatar} 
-                        alt={p.nom} 
-                        className="w-8 h-8 rounded-full object-cover border border-slate-200 shrink-0" 
-                      />
-                      <div className="min-w-0">
-                        <p className="font-bold text-xs text-slate-900 truncate">{p.nom}</p>
-                        <p className="text-[10px] text-[#2E68B4] font-semibold truncate">{p.role}</p>
-                      </div>
-                    </div>
-
-                    <span
-                      className={`px-2 py-1 text-[10px] font-bold rounded shrink-0 transition-colors shadow-xs inline-flex items-center gap-1 ${
-                        isConnecting
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-[#2E68B4] hover:bg-[#215091] text-white'
-                      }`}
-                    >
-                      {isConnecting ? (
-                        <>
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                          …
-                        </>
-                      ) : (
-                        'Ouvrir'
-                      )}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
         {!requires2FA ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
           <form onSubmit={handleLoginSubmit} className="space-y-3.5 text-xs">
-            <div className="border-t border-slate-100 pt-3">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-2">
-                Ou connexion personnalisée :
-              </span>
-            </div>
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+              Connexion personnalisée
+            </span>
 
             <div>
               <label className="block font-bold text-slate-800 mb-1">Identifiant ou Courriel Professionnel</label>
@@ -288,6 +286,8 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
               )}
             </button>
           </form>
+          {personaList}
+          </div>
         ) : (
           <form onSubmit={handle2FASubmit} className="space-y-4 text-xs">
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-md text-amber-900">

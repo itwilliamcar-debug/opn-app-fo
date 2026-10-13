@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { apiRequest } from '../../services/api';
 import { getCodeRole, getFluxStage } from '../../data/rbacMatrix';
 
@@ -18,6 +19,105 @@ const STEPS = [
 
 function money(value) {
   return `${Number(value || 0).toLocaleString('fr-FR')} F`;
+}
+
+function ListeDeroulante({ value, onChange, options, placeholder = 'Choisir' }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState(null);
+  const buttonRef = useRef(null);
+  const panelRef = useRef(null);
+
+  useLayoutEffect(() => {
+    if (!open) return undefined;
+    const place = () => {
+      const rect = buttonRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const spaceBelow = window.innerHeight - rect.bottom - 12;
+      const spaceAbove = rect.top - 12;
+      const openUp = spaceBelow < 180 && spaceAbove > spaceBelow;
+      const maxHeight = Math.max(140, Math.min(280, openUp ? spaceAbove : spaceBelow));
+      setPos({
+        left: rect.left,
+        width: rect.width,
+        top: openUp ? Math.max(8, rect.top - maxHeight - 4) : rect.bottom + 4,
+        maxHeight,
+      });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDoc = (event) => {
+      if (buttonRef.current?.contains(event.target) || panelRef.current?.contains(event.target)) return;
+      setOpen(false);
+    };
+    const onKey = (event) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const selected = options.find((opt) => String(opt.value) === String(value));
+
+  return (
+    <>
+      <button
+        type="button"
+        ref={buttonRef}
+        onClick={() => setOpen((current) => !current)}
+        className="mt-1 w-full border border-slate-200 rounded px-2 py-1.5 text-sm bg-white text-left flex items-center justify-between gap-2"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span className={`truncate ${selected ? 'text-slate-900' : 'text-slate-500'}`}>
+          {selected ? selected.label : placeholder}
+        </span>
+        <span className="text-[10px] text-slate-400 shrink-0">{open ? '▴' : '▾'}</span>
+      </button>
+      {open && pos && createPortal(
+        <ul
+          ref={panelRef}
+          role="listbox"
+          className="fixed z-[90] overflow-y-auto bg-white border border-slate-200 rounded shadow-xl py-1"
+          style={{ top: pos.top, left: pos.left, width: pos.width, maxHeight: pos.maxHeight }}
+        >
+          {options.length === 0 && <li className="px-2 py-1.5 text-xs text-slate-500">Aucune option</li>}
+          {options.map((opt) => {
+            const active = String(opt.value) === String(value);
+            return (
+              <li key={opt.value}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={active}
+                  onClick={() => {
+                    onChange(String(opt.value));
+                    setOpen(false);
+                  }}
+                  className={`w-full text-left px-2 py-1.5 text-sm hover:bg-blue-50 ${active ? 'bg-blue-50 font-semibold text-[#2E68B4]' : 'text-slate-800'}`}
+                >
+                  {opt.label}
+                </button>
+              </li>
+            );
+          })}
+        </ul>,
+        document.body
+      )}
+    </>
+  );
 }
 
 export default function FluxApprovisionnement({ activePersona }) {
@@ -185,9 +285,12 @@ export default function FluxApprovisionnement({ activePersona }) {
             </label>
             <label className="text-xs text-slate-600">
               Antenne destinataire
-              <select value={antenneId} onChange={(e) => setAntenneId(e.target.value)} className="mt-1 w-full border border-slate-200 rounded px-2 py-1.5 text-sm">
-                {antennes.map((a) => <option key={a.id} value={a.id}>{a.nom} — {a.chef_lieu}</option>)}
-              </select>
+              <ListeDeroulante
+                value={antenneId}
+                onChange={setAntenneId}
+                placeholder="Choisir une antenne"
+                options={antennes.map((a) => ({ value: a.id, label: `${a.nom} — ${a.chef_lieu}` }))}
+              />
             </label>
           </div>
           <label className="text-xs text-slate-600 block">
@@ -197,10 +300,12 @@ export default function FluxApprovisionnement({ activePersona }) {
           <div className="flex flex-wrap gap-2 items-end">
             <label className="text-xs text-slate-600 flex-1 min-w-[220px]">
               Médicament
-              <select value={ligne.produit_id} onChange={(e) => setLigne((s) => ({ ...s, produit_id: e.target.value }))} className="mt-1 w-full border border-slate-200 rounded px-2 py-1.5 text-sm">
-                <option value="">Choisir</option>
-                {produits.map((p) => <option key={p.id} value={p.id}>{p.designation}</option>)}
-              </select>
+              <ListeDeroulante
+                value={ligne.produit_id}
+                onChange={(produitId) => setLigne((s) => ({ ...s, produit_id: produitId }))}
+                placeholder="Choisir"
+                options={produits.map((p) => ({ value: p.id, label: p.designation }))}
+              />
             </label>
             <label className="text-xs text-slate-600 w-24">
               Quantité

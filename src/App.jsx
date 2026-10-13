@@ -689,8 +689,6 @@ export default function App() {
         </div>
       )}
 
-      <Header {...headerProps} chrome="banner" />
-
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {sidebarMode !== 'hidden' && (
           <Sidebar

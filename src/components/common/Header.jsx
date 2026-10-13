@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   ShieldAlert, 
   Lock, 
@@ -16,6 +17,7 @@ import {
   PlayCircle,
   FileText,
   PanelLeftOpen,
+  Menu,
 } from 'lucide-react';
 import { USERS_PERSONAS } from '../../data/usersPersonas';
 import { getCodeRole } from '../../data/rbacMatrix';
@@ -45,22 +47,54 @@ export default function Header({
 }) {
   const [demoMenuOpen, setDemoMenuOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [accessMenuOpen, setAccessMenuOpen] = useState(false);
   const demoMenuRef = useRef(null);
   const accountMenuRef = useRef(null);
+  const accountPanelRef = useRef(null);
+  const accessMenuRef = useRef(null);
+  const [accountMenuPos, setAccountMenuPos] = useState(null);
 
   useEffect(() => {
-    if (!demoMenuOpen && !accountMenuOpen) return undefined;
+    if (!demoMenuOpen && !accountMenuOpen && !accessMenuOpen) return undefined;
     const onDoc = (e) => {
       if (demoMenuRef.current && !demoMenuRef.current.contains(e.target)) {
         setDemoMenuOpen(false);
       }
-      if (accountMenuRef.current && !accountMenuRef.current.contains(e.target)) {
+      const inAccountButton = accountMenuRef.current && accountMenuRef.current.contains(e.target);
+      const inAccountPanel = accountPanelRef.current && accountPanelRef.current.contains(e.target);
+      if (!inAccountButton && !inAccountPanel) {
         setAccountMenuOpen(false);
+      }
+      if (accessMenuRef.current && !accessMenuRef.current.contains(e.target)) {
+        setAccessMenuOpen(false);
+        setDemoMenuOpen(false);
       }
     };
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
-  }, [demoMenuOpen, accountMenuOpen]);
+  }, [demoMenuOpen, accountMenuOpen, accessMenuOpen]);
+
+  useLayoutEffect(() => {
+    if (!accountMenuOpen) {
+      setAccountMenuPos(null);
+      return undefined;
+    }
+    const place = () => {
+      const button = accountMenuRef.current?.querySelector('button');
+      if (!button) return;
+      const rect = button.getBoundingClientRect();
+      const width = 224;
+      const left = Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8));
+      setAccountMenuPos({ top: rect.bottom + 8, left });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [accountMenuOpen]);
 
   const navLinks = [
     { id: 'accueil', label: 'ACCUEIL' },
@@ -81,12 +115,148 @@ export default function Header({
   };
 
   const activeUser = currentUser || null;
-  const showBanner = chrome !== 'actions';
+  const showBanner = chrome !== 'actions' && !activeUser;
   const showToolbar = chrome !== 'banner';
   const showLogo = chrome === 'full';
 
+  const closeAccessMenu = () => {
+    setAccessMenuOpen(false);
+    setDemoMenuOpen(false);
+  };
+
+  const openDemoPersona = (persona) => {
+    setDemoMenuOpen(false);
+    setAccessMenuOpen(false);
+    if (onDirectDemoLogin) onDirectDemoLogin(persona);
+    else onOpenAuth?.();
+  };
+
+  const renderAccessMenu = () => (
+    <div className="relative shrink-0" ref={accessMenuRef}>
+      <button
+        type="button"
+        onClick={() => setAccessMenuOpen((open) => !open)}
+        className="h-9 flex items-center gap-1.5 px-3 rounded-lg bg-slate-100/80 hover:bg-slate-200/80 border border-slate-200 text-xs font-semibold text-slate-700 hover:text-slate-900 transition-colors cursor-pointer whitespace-nowrap shadow-2xs"
+        aria-expanded={accessMenuOpen}
+        aria-haspopup="menu"
+      >
+        <Menu className="w-3.5 h-3.5 text-slate-500" />
+        <span>Menu</span>
+        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${accessMenuOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {accessMenuOpen && (
+        <div className="absolute right-0 mt-2 w-72 bg-white border border-slate-200 rounded-lg shadow-xl p-1.5 z-50" role="menu">
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => { closeAccessMenu(); onOpenSpotlight?.(); }}
+            className="w-full flex items-center gap-2 px-2.5 py-2 rounded-md text-left text-xs font-medium text-slate-700 hover:bg-slate-100"
+          >
+            <Search className="w-3.5 h-3.5 text-slate-400" />
+            <span className="flex-1">Recherche...</span>
+            <kbd className="inline-flex items-center px-1.5 py-0.5 bg-slate-50 border border-slate-200 rounded text-[9.5px] font-mono font-medium text-slate-500">
+              Ctrl K
+            </kbd>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => { closeAccessMenu(); onOpenDemoTour?.(); }}
+            className="w-full flex items-center gap-2 px-2.5 py-2 rounded-md text-left text-xs font-semibold text-slate-700 hover:bg-slate-100"
+          >
+            <PlayCircle className="w-3.5 h-3.5 text-slate-500" />
+            <span>Visite Guidée</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => { closeAccessMenu(); onOpenAuth?.(); }}
+            className="w-full flex items-center gap-2 px-2.5 py-2 rounded-md text-left text-xs font-semibold text-white bg-[#00A651] hover:bg-[#008742]"
+          >
+            <Lock className="w-3.5 h-3.5" />
+            <span>Connexion</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => { closeAccessMenu(); onOpenAuth?.(); }}
+            className="w-full flex items-center gap-2 px-2.5 py-2 rounded-md text-left text-xs font-semibold text-[#2E68B4] hover:bg-blue-50"
+          >
+            <LayoutDashboard className="w-3.5 h-3.5" />
+            <span>Espace Métier (ERP)</span>
+          </button>
+          <div className="mt-1 pt-1 border-t border-slate-100" ref={demoMenuRef}>
+            <button
+              type="button"
+              onClick={() => setDemoMenuOpen((open) => !open)}
+              className="w-full flex items-center gap-2 px-2.5 py-2 rounded-md text-left text-xs font-semibold text-slate-700 hover:bg-slate-100"
+            >
+              <User className="w-3.5 h-3.5 text-slate-500" />
+              <span className="flex-1">Profils Démo</span>
+              <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${demoMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {demoMenuOpen && (
+              <div className="px-1 pb-1">
+                <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  Sélectionner un profil de démonstration :
+                </div>
+                <div className="space-y-1 max-h-56 overflow-y-auto">
+                  {USERS_PERSONAS.map((p) => {
+                    const isConnecting = demoConnectingId === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => openDemoPersona(p)}
+                        className={`w-full flex items-start gap-2 p-1.5 rounded-md text-left transition-all text-xs text-slate-700 group/item ${
+                          isConnecting
+                            ? 'bg-emerald-50 border border-emerald-200'
+                            : 'hover:bg-blue-50 border border-transparent'
+                        }`}
+                      >
+                        <img
+                          src={p.avatar}
+                          alt=""
+                          className="w-7 h-7 rounded-full object-cover border border-slate-200 shrink-0 mt-0.5"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className={`font-bold truncate text-[11px] ${isConnecting ? 'text-emerald-800' : 'text-slate-900 group-hover/item:text-[#2E68B4]'}`}>
+                            {isConnecting ? `Connexion — ${p.nom}` : p.nom}
+                          </p>
+                          <p className="text-[10px] text-[#00A651] truncate">{p.role}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderUrgences = () => (
+    <button
+      type="button"
+      onClick={onTriggerEmergency}
+      className="h-9 flex items-center gap-1.5 px-3 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer whitespace-nowrap shrink-0"
+      title="Centre Opérationnel des Urgences Sanitaires"
+    >
+      <ShieldAlert className="w-3.5 h-3.5" />
+      <span>Urgences</span>
+      {emergencyCount > 0 && (
+        <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-white/20 text-white font-mono font-bold text-[10.5px]">
+          {emergencyCount}
+        </span>
+      )}
+    </button>
+  );
+
   return (
-    <header className={`z-50 shrink-0 bg-white border-b border-slate-200 ${chrome === 'full' ? 'sticky top-0 shadow-sm' : ''}`}>
+    <header className={`relative z-[60] shrink-0 bg-white border-b border-slate-200 ${chrome === 'full' ? 'sticky top-0 shadow-sm' : ''}`}>
       {showBanner && <div className="gabon-flag-strip" />}
 
       {showBanner && (
@@ -121,12 +291,32 @@ export default function Header({
       )}
 
       {showToolbar && (
-      <div className={chrome === 'actions' ? 'h-16 px-3 sm:px-4 flex items-center' : 'max-w-7xl mx-auto px-4 sm:px-8 py-3'}>
-        <div className={`flex items-center ${chrome === 'actions' ? 'w-full gap-2' : 'justify-between'}`}>
+      <div className={chrome === 'actions' ? 'h-16 px-3 sm:px-4 flex items-center' : 'max-w-7xl mx-auto px-4 sm:px-8'}>
+        <div className={`flex items-center ${chrome === 'actions' ? 'w-full gap-2' : 'gap-4 sm:gap-6 min-h-[4.25rem]'}`}>
           {showLogo && (
-          <div onClick={() => handleNavClick('accueil')} className="cursor-pointer py-1">
-            <OpnLogo className="h-14 sm:h-16" />
+          <div onClick={() => handleNavClick('accueil')} className="cursor-pointer shrink-0 py-2">
+            <OpnLogo className="h-11 sm:h-12" />
           </div>
+          )}
+          {chrome === 'full' && currentView === 'public' && (
+            <nav className="flex-1 min-w-0 self-stretch flex items-center gap-4 sm:gap-5 overflow-x-auto text-xs font-bold">
+              {navLinks.map((tab) => {
+                const isActive = (activeNavTab || 'accueil') === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => handleNavClick(tab.id)}
+                    className={`h-full flex items-center whitespace-nowrap transition-all border-b-2 font-semibold tracking-wide ${
+                      isActive
+                        ? 'border-[#00A651] text-[#2E68B4] font-bold'
+                        : 'border-transparent text-slate-700 hover:text-[#2E68B4] hover:border-slate-300'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </nav>
           )}
           {chrome === 'actions' && sidebarHidden && (
             <button
@@ -141,8 +331,11 @@ export default function Header({
             </button>
           )}
 
-          <div className={`flex items-center gap-2 overflow-x-auto py-0.5 ${chrome === 'actions' ? 'ml-auto' : ''}`}>
+          <div className={`flex items-center gap-2 py-0.5 shrink-0 ${chrome === 'actions' || chrome === 'full' ? 'ml-auto overflow-visible' : 'overflow-x-auto'}`}>
             {chrome === 'actions' && activeUser ? (
+              <>
+              {renderAccessMenu()}
+              {renderUrgences()}
               <div className="relative shrink-0" ref={accountMenuRef}>
                 <button
                   type="button"
@@ -159,8 +352,12 @@ export default function Header({
                   </span>
                   <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${accountMenuOpen ? 'rotate-180' : ''}`} />
                 </button>
-                {accountMenuOpen && (
-                  <div className="absolute right-0 mt-2 w-56 bg-white border border-slate-200 rounded-lg shadow-xl p-1.5 z-50">
+                {accountMenuOpen && accountMenuPos && createPortal(
+                  <div
+                    ref={accountPanelRef}
+                    className="fixed z-[80] w-56 bg-white border border-slate-200 rounded-lg shadow-xl p-1.5"
+                    style={{ top: accountMenuPos.top, left: accountMenuPos.left }}
+                  >
                     <button type="button" onClick={() => { setAccountMenuOpen(false); onOpenProfile?.(); }} className="w-full flex items-center gap-2 px-2 py-2 rounded-md text-left text-xs font-medium text-slate-700 hover:bg-slate-100">
                       <User className="w-3.5 h-3.5 text-slate-500" />
                       Mon profil
@@ -177,9 +374,20 @@ export default function Header({
                       <LogOut className="w-3.5 h-3.5" />
                       Déconnexion
                     </button>
-                  </div>
+                  </div>,
+                  document.body
                 )}
               </div>
+              </>
+            ) : chrome === 'full' && !activeUser ? (
+              <button
+                type="button"
+                onClick={onOpenAuth}
+                className="h-9 flex items-center gap-1.5 px-3.5 rounded-lg bg-[#00A651] hover:bg-[#008742] text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                <span>Connexion</span>
+              </button>
             ) : (
             <>
             {/* Recherche universelle Spotlight */}
@@ -398,21 +606,6 @@ export default function Header({
                 </div>
               </>
             )}
-
-            {/* Urgences */}
-            <button
-              onClick={onTriggerEmergency}
-              className="h-9 flex items-center gap-1.5 px-3 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer whitespace-nowrap shrink-0"
-              title="Centre Opérationnel des Urgences Sanitaires"
-            >
-              <ShieldAlert className="w-3.5 h-3.5" />
-              <span>Urgences</span>
-              {emergencyCount > 0 && (
-                <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-white/20 text-white font-mono font-bold text-[10.5px]">
-                  {emergencyCount}
-                </span>
-              )}
-            </button>
             </>
             )}
           </div>
@@ -420,30 +613,6 @@ export default function Header({
       </div>
       )}
 
-      {chrome === 'full' && currentView === 'public' && (
-        <div className="border-t border-slate-200 bg-white">
-          <div className="max-w-7xl mx-auto px-4 sm:px-8">
-            <nav className="flex items-center space-x-6 sm:space-x-8 overflow-x-auto text-xs font-bold">
-              {navLinks.map((tab) => {
-                const isActive = (activeNavTab || 'accueil') === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => handleNavClick(tab.id)}
-                    className={`py-3 whitespace-nowrap transition-all border-b-2 font-semibold tracking-wide ${
-                      isActive
-                        ? 'border-[#00A651] text-[#2E68B4] font-bold'
-                        : 'border-transparent text-slate-700 hover:text-[#2E68B4] hover:border-slate-300'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                );
-              })}
-            </nav>
-          </div>
-        </div>
-      )}
     </header>
   );
 }
