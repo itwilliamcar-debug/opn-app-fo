@@ -197,29 +197,33 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
   );
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className={`w-full ${requires2FA ? 'max-w-xl' : 'max-w-5xl'} bg-white border border-slate-200 rounded-lg p-6 sm:p-7 shadow-2xl space-y-5 relative max-h-[92vh] overflow-y-auto`}>
-        
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 p-1.5 rounded-md hover:bg-slate-100 transition-colors"
-        >
-          <X className="w-5 h-5" />
-        </button>
-
-        <div className="text-center space-y-1.5">
-          <div className="w-11 h-11 rounded-lg bg-emerald-50 border border-emerald-200 text-[#00A651] flex items-center justify-center mx-auto shadow-sm">
-            <Lock className="w-5 h-5" />
+    <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-start justify-center px-4 pt-32 pb-8 overflow-y-auto animate-in fade-in duration-200">
+      <div className={`w-full ${requires2FA ? 'max-w-xl' : 'max-w-5xl'} bg-white border border-slate-200 rounded-lg shadow-2xl relative flex flex-col max-h-[calc(100vh-10rem)]`}>
+        <div className="flex items-start gap-3 px-6 sm:px-7 pt-5 pb-4 shrink-0 border-b border-slate-100">
+          <div className="flex-1 text-center space-y-1.5 pl-8">
+            <div className="w-11 h-11 rounded-lg bg-emerald-50 border border-emerald-200 text-[#00A651] flex items-center justify-center mx-auto shadow-sm">
+              <Lock className="w-5 h-5" />
+            </div>
+            <h3 className="text-lg font-bold text-slate-900">
+              {requires2FA ? 'Vérification 2FA' : 'Connexion Espace Métier (ERP OPN)'}
+            </h3>
+            <p className="text-xs text-slate-600 max-w-sm mx-auto">
+              {requires2FA
+                ? 'Saisissez le code de sécurité temporaire reçu par SMS ou token.'
+                : 'Accès sécurisé pour la Direction Générale, les Approvisionnements et les 9 Antennes Provinciales.'}
+            </p>
           </div>
-          <h3 className="text-lg font-bold text-slate-900">
-            {requires2FA ? 'Vérification 2FA' : 'Connexion Espace Métier (ERP OPN)'}
-          </h3>
-          <p className="text-xs text-slate-600 max-w-sm mx-auto">
-            {requires2FA 
-              ? 'Saisissez le code de sécurité temporaire reçu par SMS ou token.' 
-              : 'Accès sécurisé pour la Direction Générale, les Approvisionnements et les 9 Antennes Provinciales.'}
-          </p>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fermer"
+            className="shrink-0 text-slate-500 hover:text-slate-800 p-1.5 rounded-md hover:bg-slate-100 border border-slate-200 bg-white transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
+
+        <div className="overflow-y-auto px-6 sm:px-7 py-5 space-y-5">
 
         {successMessage && (
           <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-md text-xs font-bold flex items-center gap-2">
@@ -318,7 +322,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
             </button>
           </form>
         )}
-
+        </div>
       </div>
     </div>
   );
