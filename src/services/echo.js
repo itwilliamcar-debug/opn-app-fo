@@ -2,6 +2,7 @@ import Echo from 'laravel-echo';
 import Pusher from 'pusher-js';
 import { getAuthToken } from './api';
 import { isRealSanctumToken } from './sanctumSession';
+import { API_ORIGIN } from './apiOrigin';
 
 /**
  * Laravel Echo + Reverb pour OPN Connect.
@@ -10,8 +11,6 @@ import { isRealSanctumToken } from './sanctumSession';
 
 let echoInstance = null;
 let lastToken = null;
-
-const API_ORIGIN = import.meta.env.VITE_API_ORIGIN || 'http://127.0.0.1:8002';
 
 function reverbConfigured() {
   return Boolean(import.meta.env.VITE_REVERB_APP_KEY);

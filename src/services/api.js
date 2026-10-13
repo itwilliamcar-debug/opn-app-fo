@@ -1,6 +1,6 @@
 // Client API OPN → Laravel /api/v1
 
-const API_BASE_URL = 'http://127.0.0.1:8002/api/v1';
+import { API_BASE_URL } from './apiOrigin';
 
 let authToken = localStorage.getItem('opn_auth_token') || null;
 

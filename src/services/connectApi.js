@@ -3,8 +3,7 @@
  * Messagerie privée, audio, emoji, Jitsi
  */
 import { getAuthToken } from './api';
-
-const API_BASE_URL = 'http://127.0.0.1:8002/api/v1';
+import { API_BASE_URL } from './apiOrigin';
 
 function getHeaders(extra = {}) {
   const headers = {

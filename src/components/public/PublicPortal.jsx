@@ -52,6 +52,7 @@ import GabonOfficialInteractiveMap from '../common/GabonOfficialInteractiveMap';
 import CatalogPdfModal from './CatalogPdfModal';
 import NewsletterEmailModal from './NewsletterEmailModal';
 import { MarchesPublicsSection } from './MarchesPublicsSection';
+import { API_BASE_URL } from '../../services/apiOrigin';
 
 export default function PublicPortal({ 
   onAccessWorkspace, 
@@ -262,7 +263,7 @@ export default function PublicPortal({
 
     let apiOk = false;
     try {
-      const res = await fetch('http://127.0.0.1:8002/api/v1/newsletter/subscribe', {
+      const res = await fetch(`${API_BASE_URL}/newsletter/subscribe`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ email: emailTrimmed }),
@@ -287,7 +288,7 @@ export default function PublicPortal({
     const targetArticle = articleToBroadcast || articles[0];
     let apiOk = false;
     try {
-      const res = await fetch('http://127.0.0.1:8002/api/v1/newsletter/broadcast', {
+      const res = await fetch(`${API_BASE_URL}/newsletter/broadcast`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({

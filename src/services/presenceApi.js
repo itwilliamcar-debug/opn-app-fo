@@ -2,8 +2,7 @@
  * Présence collègues OPN — heartbeat + liste en ligne (province).
  */
 import { getAuthToken, apiRequest } from './api';
-
-const API_BASE_URL = 'http://127.0.0.1:8002/api/v1';
+import { API_BASE_URL } from './apiOrigin';
 
 function authHeaders(extra = {}) {
   const headers = { Accept: 'application/json', ...extra };
