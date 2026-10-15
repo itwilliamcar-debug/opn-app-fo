@@ -18,6 +18,7 @@ import {
   RefreshCw,
   Loader2,
   Edit3,
+  Pencil,
   Trash2,
   UserCheck,
   UserX,
@@ -36,6 +37,8 @@ import {
   FileSpreadsheet
 } from 'lucide-react';
 import { USERS_PERSONAS } from '../../data/usersPersonas';
+import SuiviLogistiqueDirect from '../common/SuiviLogistiqueDirect';
+import SpinnerPourcentage from '../common/SpinnerPourcentage';
 import { GABON_PROVINCES } from '../../data/gabonProvinces';
 import { fetchAuditLogs } from '../../services/api';
 import { downloadCsv, downloadOfficialHtml } from '../../utils/downloadHelpers';
@@ -614,6 +617,10 @@ export default function AdminAudit({
         </div>
       )}
 
+      {(activePersona?.codeRole === 'SUPER_ADMIN' || activePersona?.code_role === 'SUPER_ADMIN') && (
+        <SuiviLogistiqueDirect className="max-w-xl" />
+      )}
+
       {/* Header Principal du Module Admin */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 sm:p-6 rounded-md border border-slate-200 shadow-sm">
         <div>
@@ -1092,11 +1099,11 @@ export default function AdminAudit({
                               <button
                                 type="button"
                                 onClick={() => handleOpenEditModal(usr)}
-                                className="px-2 py-1 bg-slate-100 hover:bg-[#2E68B4] hover:text-white rounded text-[11px] font-bold transition-all border border-slate-200"
+                                className="inline-flex p-1.5 rounded text-[#2E68B4] hover:bg-blue-50"
                                 title="Modifier"
+                                aria-label="Modifier"
                               >
-                                <Edit3 className="w-3 h-3 inline-block mr-1" />
-                                <span>Éditer</span>
+                                <Pencil className="w-4 h-4" />
                               </button>
                               <button
                                 type="button"
@@ -1270,10 +1277,7 @@ export default function AdminAudit({
           )}
 
           {sanctumReady && auditLoading && (
-            <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-600">
-              <Loader2 className="w-5 h-5 animate-spin text-[#2E68B4]" />
-              Chargement du journal d&apos;audit…
-            </div>
+            <SpinnerPourcentage libelle="Chargement du journal d'audit…" />
           )}
 
           {sanctumReady && !auditLoading && !auditError && logs.length === 0 && (

@@ -1,20 +1,19 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { apiRequest } from '../../services/api';
+import { droitModule, libelleDroits } from '../../data/rbacMatrix';
 
-const CATEGORIES = ['MEDICAMENT', 'MOBILIER', 'OUTIL', 'EQUIPEMENT', 'AUTRE'];
 const ETATS = ['NEUF', 'BON', 'USAGE', 'DEGRADE', 'HORS_SERVICE'];
 
 const VIDE = {
   designation: '',
-  categorie: 'MOBILIER',
+  categorie_id: '',
   description: '',
   valeur_acquisition: '',
   date_acquisition: '',
-  duree_amortissement_mois: 60,
+  amortissement_id: '',
   etat: 'BON',
   antenne_id: '',
-  localisation: '',
-  detenteur_nom: '',
+  detenteur_id: '',
   date_remise: '',
   observations: '',
 };
@@ -23,17 +22,24 @@ function money(value) {
   return `${Number(value || 0).toLocaleString('fr-FR')} F`;
 }
 
-export default function PatrimoineManager() {
+export default function PatrimoineManager({ activePersona }) {
+  const peutCreer = droitModule(activePersona, 'patrimoine', 'creer');
+  const peutModifier = droitModule(activePersona, 'patrimoine', 'modifier');
   const [biens, setBiens] = useState([]);
   const [antennes, setAntennes] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [amortissements, setAmortissements] = useState([]);
+  const [agents, setAgents] = useState([]);
   const [form, setForm] = useState(VIDE);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [remise, setRemise] = useState({});
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
+  const load = useCallback(async (silent = false) => {
+    if (!silent) {
+      setLoading(true);
+      setError('');
+    }
     try {
       const [pat, ants] = await Promise.all([
         apiRequest('/patrimoine'),
@@ -41,14 +47,22 @@ export default function PatrimoineManager() {
       ]);
       setBiens(pat.biens || []);
       setAntennes(ants.antennes || []);
+      setCategories(pat.categories || []);
+      setAmortissements(pat.amortissements || []);
+      setAgents(pat.agents || []);
     } catch (err) {
-      setError(err.message || 'Impossible de charger le patrimoine.');
+      if (!silent) setError(err.message || 'Impossible de charger le patrimoine.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => load(true), 8000);
+    return () => window.clearInterval(timer);
+  }, [load]);
 
   function setField(key, value) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -62,10 +76,11 @@ export default function PatrimoineManager() {
         method: 'POST',
         body: JSON.stringify({
           ...form,
+          categorie_id: Number(form.categorie_id),
+          amortissement_id: Number(form.amortissement_id),
           antenne_id: form.antenne_id ? Number(form.antenne_id) : null,
+          detenteur_id: form.detenteur_id ? Number(form.detenteur_id) : null,
           valeur_acquisition: Number(form.valeur_acquisition),
-          duree_amortissement_mois: Number(form.duree_amortissement_mois) || 60,
-          detenteur_nom: form.detenteur_nom || null,
           date_remise: form.date_remise || null,
         }),
       });
@@ -76,9 +91,22 @@ export default function PatrimoineManager() {
     }
   }
 
+  async function changerEtat(bien, etat) {
+    setError('');
+    try {
+      await apiRequest(`/patrimoine/${bien.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ etat }),
+      });
+      await load(true);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   async function remettre(bien) {
     const data = remise[bien.id] || {};
-    if (!data.detenteur_nom || !data.date_remise) {
+    if (!data.detenteur_id || !data.date_remise) {
       setError('Indiquez le détenteur et la date de remise.');
       return;
     }
@@ -100,17 +128,19 @@ export default function PatrimoineManager() {
         <p className="text-[11px] font-bold uppercase tracking-wider text-[#2E68B4]">Biens de l'OPN</p>
         <h1 className="text-xl font-black text-slate-900">Gestion du patrimoine</h1>
         <p className="text-sm text-slate-600 mt-1">Médicaments, mobilier, outils et équipements : détenteur, état et amortissement linéaire.</p>
+        <p className="text-xs text-slate-500 mt-1">Droits sur cette page : {libelleDroits(activePersona, 'patrimoine')}.</p>
       </div>
 
       {error && <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded px-3 py-2">{error}</p>}
 
-      <form onSubmit={enregistrer} className="bg-white border border-slate-200 rounded-md p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+      {peutCreer && <form onSubmit={enregistrer} className="bg-white border border-slate-200 rounded-md p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
         <label className="text-xs text-slate-600">Désignation
           <input required value={form.designation} onChange={(e) => setField('designation', e.target.value)} className="mt-1 w-full border border-slate-200 rounded px-2 py-1.5 text-sm" />
         </label>
         <label className="text-xs text-slate-600">Catégorie
-          <select value={form.categorie} onChange={(e) => setField('categorie', e.target.value)} className="mt-1 w-full border border-slate-200 rounded px-2 py-1.5 text-sm">
-            {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+          <select required value={form.categorie_id} onChange={(e) => setField('categorie_id', e.target.value)} className="mt-1 w-full border border-slate-200 rounded px-2 py-1.5 text-sm">
+            <option value="">Choisir</option>
+            {categories.map((c) => <option key={c.id} value={c.id}>{c.libelle}</option>)}
           </select>
         </label>
         <label className="text-xs text-slate-600">État
@@ -124,8 +154,11 @@ export default function PatrimoineManager() {
         <label className="text-xs text-slate-600">Date d'acquisition
           <input required type="date" value={form.date_acquisition} onChange={(e) => setField('date_acquisition', e.target.value)} className="mt-1 w-full border border-slate-200 rounded px-2 py-1.5 text-sm" />
         </label>
-        <label className="text-xs text-slate-600">Amortissement (mois)
-          <input type="number" min="1" value={form.duree_amortissement_mois} onChange={(e) => setField('duree_amortissement_mois', e.target.value)} className="mt-1 w-full border border-slate-200 rounded px-2 py-1.5 text-sm" />
+        <label className="text-xs text-slate-600">Plan d'amortissement
+          <select required value={form.amortissement_id} onChange={(e) => setField('amortissement_id', e.target.value)} className="mt-1 w-full border border-slate-200 rounded px-2 py-1.5 text-sm">
+            <option value="">Choisir</option>
+            {amortissements.map((plan) => <option key={plan.id} value={plan.id}>{plan.libelle}</option>)}
+          </select>
         </label>
         <label className="text-xs text-slate-600">Antenne
           <select value={form.antenne_id} onChange={(e) => setField('antenne_id', e.target.value)} className="mt-1 w-full border border-slate-200 rounded px-2 py-1.5 text-sm">
@@ -134,7 +167,10 @@ export default function PatrimoineManager() {
           </select>
         </label>
         <label className="text-xs text-slate-600">Remis à
-          <input value={form.detenteur_nom} onChange={(e) => setField('detenteur_nom', e.target.value)} className="mt-1 w-full border border-slate-200 rounded px-2 py-1.5 text-sm" />
+          <select value={form.detenteur_id} onChange={(e) => setField('detenteur_id', e.target.value)} className="mt-1 w-full border border-slate-200 rounded px-2 py-1.5 text-sm">
+            <option value="">Non affecté</option>
+            {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.nom}</option>)}
+          </select>
         </label>
         <label className="text-xs text-slate-600">Date de remise
           <input type="date" value={form.date_remise} onChange={(e) => setField('date_remise', e.target.value)} className="mt-1 w-full border border-slate-200 rounded px-2 py-1.5 text-sm" />
@@ -142,7 +178,7 @@ export default function PatrimoineManager() {
         <div className="md:col-span-3">
           <button className="px-3 py-2 text-xs font-bold rounded bg-[#0E2A4F] text-white">Enregistrer le bien</button>
         </div>
-      </form>
+      </form>}
 
       {loading && <p className="text-sm text-slate-500">Chargement du patrimoine…</p>}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -151,20 +187,29 @@ export default function PatrimoineManager() {
             <div className="flex justify-between gap-2">
               <div>
                 <p className="font-bold text-slate-900">{bien.designation}</p>
-                <p className="text-xs text-slate-500">{bien.code_bien} · {bien.categorie} · {bien.etat}</p>
+                <p className="text-xs text-slate-500">{bien.code_bien} · {bien.categorie?.libelle || '—'} · {bien.etat}</p>
               </div>
               <p className="text-xs font-bold text-slate-800">{money(bien.valeur_nette)}</p>
             </div>
-            <p className="text-xs text-slate-600 mt-2">Acquisition {money(bien.valeur_acquisition)} · amorti {money(bien.amortissement_cumule)} sur {bien.duree_amortissement_mois} mois</p>
-            <p className="text-xs text-slate-600">Lieu : {bien.antenne?.nom || bien.localisation || 'Siège'}</p>
-            <p className="text-xs text-slate-700 mt-1">Remis à : {bien.detenteur_nom || 'non affecté'}{bien.date_remise ? ` le ${bien.date_remise}` : ''}</p>
-            <div className="flex flex-wrap gap-2 mt-3">
-              <input
-                placeholder="Détenteur"
-                value={remise[bien.id]?.detenteur_nom || ''}
-                onChange={(e) => setRemise((s) => ({ ...s, [bien.id]: { ...s[bien.id], detenteur_nom: e.target.value } }))}
+            <p className="text-xs text-slate-600 mt-2">Acquisition {money(bien.valeur_acquisition)} · amorti {money(bien.amortissement_cumule)} sur {bien.amortissement?.duree_mois || 0} mois</p>
+            <p className="text-xs text-slate-600">Lieu : {bien.antenne?.nom || bien.siege?.nom || 'Siège'}</p>
+            <p className="text-xs text-slate-700 mt-1">Remis à : {bien.detenteur?.nom || 'non affecté'}{bien.date_remise ? ` le ${String(bien.date_remise).slice(0, 10)}` : ''}</p>
+            {peutModifier && (
+            <label className="text-xs text-slate-600 block mt-2">État du bien
+              <select value={bien.etat} onChange={(e) => changerEtat(bien, e.target.value)} className="mt-1 border border-slate-200 rounded px-2 py-1 text-xs">
+                {ETATS.map((etat) => <option key={etat}>{etat}</option>)}
+              </select>
+            </label>
+            )}
+            {peutModifier && <div className="flex flex-wrap gap-2 mt-3">
+              <select
+                value={remise[bien.id]?.detenteur_id || ''}
+                onChange={(e) => setRemise((s) => ({ ...s, [bien.id]: { ...s[bien.id], detenteur_id: e.target.value } }))}
                 className="border border-slate-200 rounded px-2 py-1 text-xs"
-              />
+              >
+                <option value="">Détenteur</option>
+                {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.nom}</option>)}
+              </select>
               <input
                 type="date"
                 value={remise[bien.id]?.date_remise || ''}
@@ -172,7 +217,7 @@ export default function PatrimoineManager() {
                 className="border border-slate-200 rounded px-2 py-1 text-xs"
               />
               <button type="button" onClick={() => remettre(bien)} className="px-2 py-1 text-xs font-bold rounded border border-slate-300">Remettre</button>
-            </div>
+            </div>}
           </article>
         ))}
       </div>

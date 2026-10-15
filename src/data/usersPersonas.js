@@ -20,6 +20,22 @@ export const USERS_PERSONAS = [
     description: "Administration SI nationale (utilisateurs, antennes, catalogues techniques, paramètres ANINF). Ne valide ni n'instruit les demandes d'approvisionnement — supervision lecture seule."
   },
   {
+    id: "OPN-MET-001",
+    nom: "Admin Métier",
+    role: "Configuration du workflow",
+    codeRole: "ADMIN_METIER",
+    entite: "Paramétrage métier OPN - Libreville",
+    provinceId: "G1",
+    email: "admin.metier@opn.ga",
+    telephone: "+241 011 70 00 02",
+    avatar: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=200&h=200&fit=crop&crop=faces&auto=format&q=80",
+    initiales: "AM",
+    badgeColor: "bg-teal-700",
+    scope: "NATIONAL",
+    droits: ["PARAMETRAGE", "FLUX", "REFERENTIEL", "PATRIMOINE", "SERVICES"],
+    description: "Configure le workflow en cours : approvisionnement, référentiel, patrimoine, centre de services et droits d'accès."
+  },
+  {
     id: "OPN-IT-002",
     nom: "Ing. Kevin MAVOUNGOU BIYOGHE",
     role: "Administrateur IT & Cyber-Sécurité",
@@ -324,3 +340,19 @@ export const USERS_PERSONAS = [
     description: "Audit interne ANINF, traçabilité intégrale de chaque modification, signature et clôture d'opération."
   }
 ];
+
+/** Cinq profils de connexion. Les autres personas restent disponibles pour l'historique, mais ne sont plus proposés. */
+export const PROFILS_DEFAUT_IDS = ['OPN-ADM-001', 'OPN-MET-001', 'OPN-DIR-001', 'OPN-FIN-001', 'OPN-APP-001', 'OPN-DEM-PH01'];
+
+export const PROFILS_DEFAUT = PROFILS_DEFAUT_IDS.map((id) => {
+  const persona = USERS_PERSONAS.find((item) => item.id === id);
+  const libelles = {
+    'OPN-ADM-001': 'Super administrateur / Admin IT',
+    'OPN-MET-001': 'Admin métier',
+    'OPN-DIR-001': 'Directeur général',
+    'OPN-FIN-001': 'Directrice administrative et financière',
+    'OPN-APP-001': 'Directrice des approvisionnements nationaux',
+    'OPN-DEM-PH01': 'Demandeur',
+  };
+  return { ...persona, role: libelles[id] || persona.role };
+});

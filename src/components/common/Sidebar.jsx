@@ -6,7 +6,8 @@ import {
   MessageSquare, 
   AlertTriangle, 
   FolderOpen, 
-  ShieldCheck, 
+  ShieldCheck,
+  Settings, 
   Briefcase, 
   QrCode, 
   ShoppingCart, 
@@ -30,11 +31,12 @@ import {
   Route,
   Boxes,
   LifeBuoy,
+  Database,
   ChevronsLeft,
   ChevronsRight,
   PanelLeftClose
 } from 'lucide-react';
-import { getCodeRole, getRoleModules } from '../../data/rbacMatrix';
+import { getCodeRole, getVisibleModules } from '../../data/rbacMatrix';
 import OpnLogo from './OpnLogo';
 
 const ICON_BY_MODULE = {
@@ -64,8 +66,10 @@ const ICON_BY_MODULE = {
   collaborative: Video,
   documents: FolderOpen,
   flux_appro: Route,
+  referentiel: Database,
   patrimoine: Boxes,
   centre_services: LifeBuoy,
+  parametrage: Settings,
 };
 
 export default function Sidebar({ 
@@ -80,7 +84,7 @@ export default function Sidebar({
 }) {
   const user = currentUser || activePersona;
   const codeRole = getCodeRole(user);
-  const menuItems = getRoleModules(codeRole).map((item) => ({
+  const menuItems = getVisibleModules(user).map((item) => ({
     ...item,
     icon: codeRole === 'CONVOYEUR' && item.id === 'workspace'
       ? QrCode
@@ -96,7 +100,7 @@ export default function Sidebar({
       <div className={`h-16 shrink-0 border-b border-white/10 flex items-center ${collapsed ? 'justify-center px-1' : 'justify-between gap-2 px-3'}`}>
         <button
           type="button"
-          onClick={() => setCurrentView(codeRole === 'SUPER_ADMIN' ? 'admin' : 'flux_appro')}
+          onClick={() => setCurrentView(menuItems[0]?.id || 'flux_appro')}
           className="min-w-0"
           title="Office Pharmaceutique National"
         >

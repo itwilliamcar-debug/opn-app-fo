@@ -14,16 +14,22 @@ export function setAuthToken(token) {
 }
 
 export function getAuthToken() {
+  try {
+    authToken = localStorage.getItem('opn_auth_token') || null;
+  } catch {
+    /* navigation privée */
+  }
   return authToken;
 }
 
 function getHeaders() {
+  const token = getAuthToken();
   const headers = {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
   };
-  if (authToken) {
-    headers['Authorization'] = `Bearer ${authToken}`;
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
   }
   return headers;
 }

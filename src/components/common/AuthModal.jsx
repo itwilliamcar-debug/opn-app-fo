@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { loginUser, verify2FA } from '../../services/api';
 import { ensureSanctumSessionForPersona, isRealSanctumToken } from '../../services/sanctumSession';
-import { USERS_PERSONAS } from '../../data/usersPersonas';
+import { PROFILS_DEFAUT, USERS_PERSONAS } from '../../data/usersPersonas';
 
 export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPersona }) {
   const [email, setEmail] = useState(currentPersona?.email || 'jb.obame@opn.ga');
@@ -149,7 +149,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
         Ouvrez une session de démonstration sans saisir les identifiants.
       </p>
       <div className="space-y-2 overflow-y-auto max-h-[52vh] pr-1">
-        {USERS_PERSONAS.map((p) => {
+        {PROFILS_DEFAUT.map((p) => {
           const isConnecting = connectingPersonaId === p.id;
           return (
             <button

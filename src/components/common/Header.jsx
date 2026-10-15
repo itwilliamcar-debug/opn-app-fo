@@ -19,7 +19,7 @@ import {
   PanelLeftOpen,
   Menu,
 } from 'lucide-react';
-import { USERS_PERSONAS } from '../../data/usersPersonas';
+import { PROFILS_DEFAUT } from '../../data/usersPersonas';
 import { getCodeRole } from '../../data/rbacMatrix';
 import OpnLogo from './OpnLogo';
 
@@ -202,7 +202,7 @@ export default function Header({
                   Sélectionner un profil de démonstration :
                 </div>
                 <div className="space-y-1 max-h-56 overflow-y-auto">
-                  {USERS_PERSONAS.map((p) => {
+                  {PROFILS_DEFAUT.map((p) => {
                     const isConnecting = demoConnectingId === p.id;
                     return (
                       <button
@@ -456,7 +456,7 @@ export default function Header({
                       Sélectionner un profil de démonstration :
                     </div>
                     <div className="space-y-1 max-h-64 overflow-y-auto">
-                      {USERS_PERSONAS.map((p) => {
+                      {PROFILS_DEFAUT.map((p) => {
                         const isConnecting = demoConnectingId === p.id;
                         return (
                         <button

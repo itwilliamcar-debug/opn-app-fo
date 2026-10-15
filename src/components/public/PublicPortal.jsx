@@ -397,10 +397,7 @@ export default function PublicPortal({
               </div>
 
               <div className="max-w-7xl mx-auto px-4 sm:px-8 relative z-10">
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
-                  
-                  {/* Colonne Gauche */}
-                  <div className="lg:col-span-7 space-y-5">
+                <div className="max-w-3xl space-y-5">
                     
                     <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 border border-white/20 text-xs text-white shadow-xs">
                       <span className="w-2.5 h-2.5 rounded-full bg-[#00FF87] animate-pulse shadow-[0_0_8px_#00FF87]" />
@@ -452,78 +449,6 @@ export default function PublicPortal({
                         Consulter les Tarifs DCI
                       </button>
                     </div>
-
-                  </div>
-
-                  {/* Colonne Droite : Suivi Logistique avec Voyant Étincelant */}
-                  <div className="lg:col-span-5 bg-white/10 backdrop-blur-md rounded-lg border border-white/20 p-5 space-y-4 shadow-xl">
-                    <div className="flex items-center justify-between border-b border-white/15 pb-3">
-                      
-                      {/* Voyant Étincelant & Titre */}
-                      <div className="flex items-center gap-2.5">
-                        <div className="relative flex items-center justify-center w-3 h-3">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#00FF87] opacity-75" />
-                          <span className="animate-twinkle absolute inline-flex h-3 w-3 rounded-full bg-[#00FF87]/40 shadow-[0_0_12px_#00FF87]" />
-                          <span className="relative inline-flex rounded-full h-2 w-2 bg-[#00FF87] shadow-[0_0_8px_#00FF87]" />
-                        </div>
-                        <span className="text-xs font-black text-white uppercase tracking-wider">
-                          Suivi Logistique en Direct
-                        </span>
-                      </div>
-
-                      {/* Badge Hub Owendo avec halo doux */}
-                      <span className="text-[10px] font-extrabold px-2.5 py-1 rounded-full bg-emerald-500/20 text-[#00FF87] border border-emerald-400/30 backdrop-blur-xs flex items-center gap-1.5 shadow-[0_0_10px_rgba(0,255,135,0.15)]">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#00FF87] animate-pulse" />
-                        Hub Owendo Opérationnel
-                      </span>
-                    </div>
-
-                    <div className="space-y-2 text-xs text-blue-100">
-                      <div className="flex items-center justify-between p-2.5 bg-black/25 rounded-md border border-white/10 hover:border-white/20 transition-colors">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-7 h-7 rounded bg-[#00A651] text-white flex items-center justify-center font-bold text-xs shadow-xs">
-                            G2
-                          </div>
-                          <div>
-                            <p className="text-xs font-bold text-white">Wagon Setrag N°884</p>
-                            <p className="text-[10px] text-blue-200">Owendo ➔ Franceville (36h)</p>
-                          </div>
-                        </div>
-                        <span className="text-[10px] font-extrabold text-[#00FF87] bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-500/30">En Transit</span>
-                      </div>
-
-                      <div className="flex items-center justify-between p-2.5 bg-black/25 rounded-md border border-white/10 hover:border-white/20 transition-colors">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-7 h-7 rounded bg-[#2E68B4] text-white flex items-center justify-center font-bold text-xs shadow-xs">
-                            G8
-                          </div>
-                          <div>
-                            <p className="text-xs font-bold text-white">Convoi Maritime N°12</p>
-                            <p className="text-[10px] text-blue-200">Port-Gentil (12h)</p>
-                          </div>
-                        </div>
-                        <span className="text-[10px] font-extrabold text-cyan-300 bg-cyan-950/40 px-2 py-0.5 rounded border border-cyan-500/30">À Quai</span>
-                      </div>
-
-                      <div className="flex items-center justify-between p-2.5 bg-black/25 rounded-md border border-white/10 hover:border-white/20 transition-colors">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-7 h-7 rounded bg-[#DC143C] text-white flex items-center justify-center font-bold text-xs shadow-xs">
-                            G4
-                          </div>
-                          <div>
-                            <p className="text-xs font-bold text-white">Chaîne du Froid 2°C–8°C</p>
-                            <p className="text-[10px] text-blue-200">Mouila & Ndendé</p>
-                          </div>
-                        </div>
-                        <span className="text-[10px] font-extrabold text-[#FFDE16] bg-amber-950/40 px-2 py-0.5 rounded border border-amber-500/30">Contrôle OK</span>
-                      </div>
-                    </div>
-
-                    <div className="pt-2 border-t border-white/15 flex items-center justify-between text-[11px] text-blue-200">
-                      <span>Régulation : <strong className="text-white">ANINF / CNPDCP</strong></span>
-                      <span>Devise : <strong className="text-white font-bold">Franc CFA (FCFA XAF)</strong></span>
-                    </div>
-                  </div>
 
                 </div>
               </div>

@@ -11,6 +11,7 @@ const DEMO_LOGIN_ENABLED =
 export const DEMO_PASSWORDS_BY_EMAIL = DEMO_LOGIN_ENABLED
   ? {
       'superadmin@opn.ga': 'OPN2026@SuperAdmin',
+      'admin.metier@opn.ga': 'OPN2026@Metier',
       'admin.it@opn.ga': 'OPN2026@AdminIT',
       'jb.obame@opn.ga': 'OPN2026@Libreville',
       'dir.operations@opn.ga': 'OPN2026@Direction',

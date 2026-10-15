@@ -599,6 +599,13 @@ const MODULE_SERVICES = {
   badgeColor: 'bg-slate-100 text-slate-700',
 };
 
+const MODULE_REFERENTIEL = {
+  id: 'referentiel',
+  label: 'Référentiel',
+  badge: 'CRUD',
+  badgeColor: 'bg-indigo-100 text-indigo-800',
+};
+
 /** Rôles qui passent une commande (pharmacie / partenaire). */
 const ROLES_COMMANDE = ['DEMANDEUR_PHARMACIEN', 'DEMANDEUR_STRUCTURE'];
 /** Rôles d'antenne : réception puis transmission au siège. */
@@ -617,7 +624,7 @@ const ROLES_SIEGE = [
 ];
 
 export function getFluxStage(codeRole) {
-  if (codeRole === 'SUPER_ADMIN') return 'supervision';
+  if (codeRole === 'SUPER_ADMIN' || codeRole === 'ADMIN_METIER') return 'supervision';
   if (ROLES_COMMANDE.includes(codeRole)) return 'commande';
   if (ROLES_ANTENNE.includes(codeRole)) return 'antenne';
   if (ROLES_SIEGE.includes(codeRole)) return 'siege';
@@ -625,23 +632,108 @@ export function getFluxStage(codeRole) {
 }
 
 export function getRoleModules(codeRole) {
-  const workflow = [MODULE_FLUX];
+  const workflow = [MODULE_FLUX, MODULE_REFERENTIEL];
   if (ROLES_PATRIMOINE.includes(codeRole)) {
     workflow.push(MODULE_PATRIMOINE);
   }
   workflow.push(MODULE_SERVICES);
+  if (codeRole === 'ADMIN_METIER') {
+    return [MODULE_FLUX, MODULE_REFERENTIEL, MODULE_PATRIMOINE, MODULE_SERVICES, MODULE_PARAMETRAGE];
+  }
   if (codeRole === 'SUPER_ADMIN') {
     return [...workflow, ...(ROLE_MODULES.SUPER_ADMIN || [])];
   }
   return workflow;
 }
 
+const MODULE_PARAMETRAGE = {
+  id: 'parametrage',
+  label: 'Paramétrage & administration',
+  badge: 'Droits',
+  badgeColor: 'bg-emerald-100 text-emerald-800',
+};
+
+function ecran(base, access, gestion) {
+  return { ...base, access, gestion };
+}
+
+const ECRANS_ADMIN = Object.fromEntries((ROLE_MODULES.SUPER_ADMIN || []).map((item) => [item.id, item]));
+
+/** Une entrée de sidebar = un code ACCESS_*. La gestion de la page = le code sans préfixe. */
+export const MODULES_DROITS = [
+  ecran(MODULE_FLUX, 'ACCESS_FLUX', 'flux'),
+  ecran(MODULE_REFERENTIEL, 'ACCESS_REFERENTIEL', 'referentiel'),
+  ecran(MODULE_PATRIMOINE, 'ACCESS_PATRIMOINE', 'patrimoine'),
+  ecran(MODULE_SERVICES, 'ACCESS_SERVICES', 'services'),
+  ecran(MODULE_PARAMETRAGE, 'ACCESS_PARAMETRAGE', 'parametrage'),
+  ecran(ECRANS_ADMIN.admin, 'ACCESS_ADMIN', 'admin'),
+  ecran(ECRANS_ADMIN.dashboard, 'ACCESS_TABLEAU_BORD', 'tableau_bord'),
+  ecran(ECRANS_ADMIN.workspace, 'ACCESS_DEMANDES', 'demandes'),
+  ecran(ECRANS_ADMIN.pharmacy, 'ACCESS_STOCKS', 'stocks'),
+  ecran(ECRANS_ADMIN.supply, 'ACCESS_APPROVISIONNEMENTS', 'approvisionnements'),
+  ecran(ECRANS_ADMIN.purchases, 'ACCESS_ACHATS', 'achats'),
+  ecran(ECRANS_ADMIN.quality, 'ACCESS_QUALITE', 'qualite'),
+  ecran(ECRANS_ADMIN.logistics, 'ACCESS_LOGISTIQUE', 'logistique'),
+  ecran(ECRANS_ADMIN.antenna, 'ACCESS_ANTENNES', 'antennes'),
+  ecran(ECRANS_ADMIN.emergency, 'ACCESS_URGENCES', 'urgences'),
+  ecran(ECRANS_ADMIN.hr, 'ACCESS_AGENTS', 'agents'),
+  ecran(ECRANS_ADMIN.billing, 'ACCESS_FACTURATION', 'facturation'),
+  ecran(ECRANS_ADMIN.wms, 'ACCESS_ENTREPOTS', 'entrepots'),
+  ecran(ECRANS_ADMIN.distribution, 'ACCESS_DISTRIBUTION', 'distribution'),
+  ecran(ECRANS_ADMIN.planning, 'ACCESS_PLANIFICATION', 'planification'),
+  ecran(ECRANS_ADMIN.citizen, 'ACCESS_PORTAIL', 'portail'),
+  ecran(ECRANS_ADMIN.gmao, 'ACCESS_GMAO', 'gmao'),
+  ecran(ECRANS_ADMIN.collaborative, 'ACCESS_CONNECT', 'connect'),
+  ecran(ECRANS_ADMIN.prospection, 'ACCESS_PROSPECTION', 'prospection'),
+  ecran(ECRANS_ADMIN.gross_margin, 'ACCESS_MARGE', 'marge'),
+  ecran(ECRANS_ADMIN.debt_public, 'ACCESS_RECOUVREMENT', 'recouvrement'),
+  ecran(ECRANS_ADMIN.inventory_waste, 'ACCESS_INVENTAIRES', 'inventaires'),
+].filter((item) => item.id);
+
+export function getVisibleModules(user) {
+  const rows = Array.isArray(user?.habilitations) ? user.habilitations : [];
+  const codes = new Set(
+    rows
+      .filter((row) => String(row.code || '').startsWith('ACCESS_') && (row.acces || row.lire || row.creer || row.modifier || row.valider))
+      .map((row) => row.code)
+  );
+  if (!codes.size) return getRoleModules(getCodeRole(user));
+  return MODULES_DROITS.filter((item) => codes.has(item.access));
+}
+
+export function droit(user, code, action = 'lire') {
+  const rows = user?.habilitations;
+  if (!Array.isArray(rows) || rows.length === 0) return true;
+  const row = rows.find((item) => item.code === code);
+  if (!row) return false;
+  if (action === 'acces') return Boolean(row.acces || row.lire || row.creer || row.modifier || row.valider);
+  return Boolean(row[action]);
+}
+
+export function droitModule(user, moduleId, action = 'lire') {
+  const module = MODULES_DROITS.find((item) => item.id === moduleId);
+  return droit(user, module?.gestion || moduleId, action);
+}
+
+export function libelleDroits(user, code) {
+  const droits = [
+    ['creer', 'ajouter'],
+    ['lire', 'consulter'],
+    ['modifier', 'modifier et supprimer'],
+    ['valider', 'valider'],
+  ].filter(([action]) => droit(user, code, action)).map(([, label]) => label);
+  return droits.length ? droits.join(', ') : 'consultation seule';
+}
+
 export function getRoleCapabilities(codeRole) {
   return ROLE_CAPABILITIES[codeRole] || ROLE_CAPABILITIES.DEMANDEUR_STRUCTURE;
 }
 
-export function canAccessModule(codeRole, moduleId) {
-  return getRoleModules(codeRole).some((m) => m.id === moduleId);
+export function canAccessModule(codeRoleOrUser, moduleId) {
+  if (codeRoleOrUser && typeof codeRoleOrUser === 'object') {
+    return getVisibleModules(codeRoleOrUser).some((item) => item.id === moduleId);
+  }
+  return getRoleModules(codeRoleOrUser).some((item) => item.id === moduleId);
 }
 
 export function isDemandInApproQueue(statut) {

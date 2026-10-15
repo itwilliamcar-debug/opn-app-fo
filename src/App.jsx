@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Header from './components/common/Header';
 import Sidebar from './components/common/Sidebar';
 import AuthModal from './components/common/AuthModal';
@@ -34,31 +34,87 @@ import ProspectionCommercialeManager from './components/commercial/ProspectionCo
 import InventoryAndWasteManager from './components/inventory/InventoryAndWasteManager';
 import FluxApprovisionnement from './components/flux/FluxApprovisionnement';
 import PatrimoineManager from './components/patrimoine/PatrimoineManager';
+import ReferentielManager from './components/referentiel/ReferentielManager';
+import ParametrageSecurite from './components/parametrage/ParametrageSecurite';
 import CentreServices from './components/services/CentreServices';
 import GrossMarginDashboard from './components/dashboard/GrossMarginDashboard';
 import PublicSectorDebtManager from './components/billing/PublicSectorDebtManager';
 import OpnSpotlightModal from './components/common/OpnSpotlightModal';
 import GuidedDemoTourModal, { DEMO_SCENARIOS } from './components/common/GuidedDemoTourModal';
 import PlaquetteCommercialeModal from './components/common/PlaquetteCommercialeModal';
+import AppToast from './components/common/AppToast';
 import { USERS_PERSONAS } from './data/usersPersonas';
 import { subscribeToRealtimeEvents, setAuthToken, getAuthToken, apiRequest } from './services/api';
 import { ensureSanctumSessionForPersona, isRealSanctumToken } from './services/sanctumSession';
 import { sendPresenceHeartbeat } from './services/presenceApi';
-import { getCodeRole, getRoleCapabilities, canAccessModule } from './data/rbacMatrix';
-import { CheckCircle2 } from 'lucide-react';
+import { getCodeRole, getRoleCapabilities, canAccessModule, getVisibleModules } from './data/rbacMatrix';
+import {
+  claimRefreshLock,
+  clearSessionClock,
+  isSessionIdle,
+  lastActivityAt,
+  markSessionActivity,
+  markTokenRefreshed,
+  persistSessionUser,
+  persistSessionView,
+  readSessionUser,
+  readSessionView,
+  releaseRefreshLock,
+  tokenRefreshDue,
+} from './services/sessionActivity';
+
+function sessionInitiale() {
+  const token = (() => {
+    try {
+      return localStorage.getItem('opn_auth_token');
+    } catch {
+      return null;
+    }
+  })();
+  if (!isRealSanctumToken(token) || isSessionIdle()) return null;
+  return readSessionUser();
+}
+
+function vueInitiale(user) {
+  if (!user) return 'public';
+  return readSessionView() || (getCodeRole(user) === 'SUPER_ADMIN' ? 'admin' : 'flux_appro');
+}
+
+function fusionnerUtilisateur(local, distant) {
+  const apiUser = distant?.user || distant || {};
+  return {
+    ...(local || {}),
+    ...apiUser,
+    nom: apiUser.nom || apiUser.name || local?.nom,
+    role: local?.role || apiUser.role,
+    codeRole: apiUser.codeRole || apiUser.code_role || local?.codeRole,
+    avatar: local?.avatar || apiUser.avatar,
+    habilitations: apiUser.habilitations || distant?.habilitations || local?.habilitations || [],
+    email: apiUser.email || local?.email,
+  };
+}
 
 export default function App() {
-  const [currentUser, setCurrentUser] = useState(null);
-  const [currentView, setCurrentView] = useState('public');
+  const sessionDepart = useState(() => sessionInitiale())[0];
+  const [currentUser, setCurrentUser] = useState(sessionDepart);
+  const [currentView, setCurrentView] = useState(() => vueInitiale(sessionDepart));
   const [activeNavTab, setActiveNavTab] = useState('accueil');
-  const [activePersona, setActivePersona] = useState(null);
+  const [activePersona, setActivePersona] = useState(sessionDepart);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [helpdeskModalOpen, setHelpdeskModalOpen] = useState(false);
   const [colleaguesOpen, setColleaguesOpen] = useState(false);
   const [realtimeNotification, setRealtimeNotification] = useState(null);
   const [helpdeskTickets, setHelpdeskTickets] = useState([]);
-  const [sanctumReady, setSanctumReady] = useState(false);
+  const [sanctumReady, setSanctumReady] = useState(() => Boolean(sessionDepart));
+  const [repriseSession, setRepriseSession] = useState(() => {
+    try {
+      const token = localStorage.getItem('opn_auth_token');
+      return isRealSanctumToken(token) && !isSessionIdle() && !sessionDepart;
+    } catch {
+      return false;
+    }
+  });
   const [sanctumBusy, setSanctumBusy] = useState(false);
   const [demoConnectingId, setDemoConnectingId] = useState(null);
   const [pendingVisioJoin, setPendingVisioJoin] = useState(null);
@@ -97,22 +153,57 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    // Valider le token stocké sans ouvrir le SSE tant que /auth/me n'a pas répondu.
     const token = getAuthToken();
+    if (token && isSessionIdle()) {
+      clearSessionClock();
+      setAuthToken(null);
+      setCurrentUser(null);
+      setActivePersona(null);
+      setCurrentView('public');
+      setSanctumReady(false);
+      return undefined;
+    }
     if (!isRealSanctumToken(token)) {
       setSanctumReady(false);
       return undefined;
     }
+    if (!lastActivityAt()) {
+      markSessionActivity();
+      markTokenRefreshed();
+    }
+    const tokenAuDepart = token;
     let cancelled = false;
     (async () => {
       try {
-        await apiRequest('/auth/me', { timeoutMs: 8000 });
-        if (!cancelled) setSanctumReady(true);
-      } catch {
-        if (!cancelled) {
+        const me = await apiRequest('/auth/me', { timeoutMs: 15000 });
+        if (cancelled) return;
+        const restored = fusionnerUtilisateur(readSessionUser(), me);
+        persistSessionUser(restored);
+        setCurrentUser(restored);
+        setActivePersona(restored);
+        setCurrentView((view) => (view === 'public' ? vueInitiale(restored) : view));
+        setSanctumReady(true);
+      } catch (err) {
+        if (cancelled) return;
+        const jetonInchange = getAuthToken() === tokenAuDepart;
+        if (err?.status === 401 && jetonInchange) {
+          clearSessionClock();
           setAuthToken(null);
+          setCurrentUser(null);
+          setActivePersona(null);
+          setCurrentView('public');
           setSanctumReady(false);
+          return;
         }
+        const stored = readSessionUser();
+        if (stored) {
+          setCurrentUser(stored);
+          setActivePersona(stored);
+          setCurrentView((view) => (view === 'public' ? vueInitiale(stored) : view));
+          setSanctumReady(true);
+        }
+      } finally {
+        if (!cancelled) setRepriseSession(false);
       }
     })();
     return () => {
@@ -206,6 +297,7 @@ export default function App() {
     const authenticatedUser = user || null;
     if (!authenticatedUser) return;
 
+    persistSessionUser(authenticatedUser);
     setCurrentUser(authenticatedUser);
     setActivePersona(authenticatedUser);
     setProfileModalOpen(false);
@@ -216,6 +308,8 @@ export default function App() {
 
     if (isRealSanctumToken(token)) {
       setAuthToken(token);
+      markSessionActivity();
+      markTokenRefreshed();
       setSanctumReady(true);
     } else {
       const ok = await activateSanctumForPersona(authenticatedUser);
@@ -227,7 +321,7 @@ export default function App() {
       }
     }
 
-    setRealtimeNotification(`Session ouverte : Bienvenue ${authenticatedUser.nom} (${authenticatedUser.role}) !`);
+    setRealtimeNotification(`Session ouverte. Bienvenue ${authenticatedUser.nom}.`);
     setTimeout(() => setRealtimeNotification(null), 4500);
   };
 
@@ -282,6 +376,7 @@ export default function App() {
     }
 
     setAuthToken(null);
+    clearSessionClock();
     setSanctumReady(false);
     setCurrentUser(null);
     setActivePersona(null);
@@ -295,7 +390,103 @@ export default function App() {
     setTimeout(() => setRealtimeNotification(null), 4000);
   };
 
+  const idleLogoutStarted = useRef(false);
+  const userRef = useRef(currentUser);
+  userRef.current = currentUser;
+
+  useEffect(() => {
+    if (!currentUser || !sanctumReady || !isRealSanctumToken(getAuthToken())) {
+      return undefined;
+    }
+
+    if (!lastActivityAt()) markSessionActivity();
+
+    let lastWrite = 0;
+    const onActivity = () => {
+      const now = Date.now();
+      if (now - lastWrite < 10000) return;
+      lastWrite = now;
+      markSessionActivity(now);
+    };
+    const activityEvents = ['pointerdown', 'keydown', 'touchstart', 'wheel'];
+    activityEvents.forEach((eventName) => {
+      window.addEventListener(eventName, onActivity, { passive: true });
+    });
+    document.addEventListener('scroll', onActivity, { capture: true, passive: true });
+
+    const expireForInactivity = async () => {
+      if (idleLogoutStarted.current) return;
+      idleLogoutStarted.current = true;
+      try {
+        if (isRealSanctumToken(getAuthToken())) {
+          await apiRequest('/auth/logout', { method: 'POST', body: '{}', timeoutMs: 4000 });
+        }
+      } catch {
+        /* la session locale est fermée même si l'API ne répond pas */
+      }
+      clearSessionClock();
+      setAuthToken(null);
+      window.location.reload();
+    };
+
+    const tick = async () => {
+      if (!isRealSanctumToken(getAuthToken())) return;
+      if (isSessionIdle()) {
+        await expireForInactivity();
+        return;
+      }
+      if (!tokenRefreshDue()) return;
+      if (!claimRefreshLock()) return;
+      try {
+        const data = await apiRequest('/auth/refresh', { method: 'POST', body: '{}', timeoutMs: 20000 });
+        if (data?.token && isRealSanctumToken(data.token)) {
+          setAuthToken(data.token);
+          markTokenRefreshed();
+          const suivant = fusionnerUtilisateur(userRef.current, data);
+          persistSessionUser(suivant);
+          setCurrentUser(suivant);
+          setActivePersona(suivant);
+        }
+      } catch (err) {
+        if (err?.status === 401) {
+          try {
+            await apiRequest('/auth/me', { timeoutMs: 8000 });
+            markTokenRefreshed();
+          } catch (meErr) {
+            if (meErr?.status === 401) await expireForInactivity();
+          }
+        }
+      } finally {
+        releaseRefreshLock();
+      }
+    };
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
+    const onStorage = (event) => {
+      if (event.key === 'opn_auth_token' && !event.newValue) {
+        window.location.reload();
+      }
+    };
+
+    const premier = setTimeout(tick, 2000);
+    const timer = setInterval(tick, 30000);
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('storage', onStorage);
+
+    return () => {
+      clearTimeout(premier);
+      clearInterval(timer);
+      activityEvents.forEach((eventName) => window.removeEventListener(eventName, onActivity));
+      document.removeEventListener('scroll', onActivity, { capture: true });
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, [currentUser?.id, currentUser?.email, sanctumReady]);
+
   const handleUpdatePersona = (updatedData) => {
+    persistSessionUser(updatedData);
     setActivePersona(updatedData);
     setCurrentUser(updatedData);
   };
@@ -318,7 +509,7 @@ export default function App() {
       setTimeout(() => setRealtimeNotification(null), 4000);
       return;
     }
-    if (!canAccessModule(getCodeRole(currentUser), 'emergency')) {
+    if (!canAccessModule(currentUser, 'emergency')) {
       setRealtimeNotification('Votre profil n’a pas accès au module Urgences.');
       setTimeout(() => setRealtimeNotification(null), 4000);
       return;
@@ -328,18 +519,27 @@ export default function App() {
 
   useEffect(() => {
     if (!currentUser || currentView === 'public') return;
-    const codeRole = getCodeRole(activePersona || currentUser);
-    if (!canAccessModule(codeRole, currentView)) {
-      setCurrentView(codeRole === 'SUPER_ADMIN' ? 'admin' : 'flux_appro');
+    const user = activePersona || currentUser;
+    if (['direction_home', 'direction_modules', 'direction_dashboard'].includes(currentView)) return;
+    if (!canAccessModule(user, currentView)) {
+      const modules = getVisibleModules(user);
+      setCurrentView(modules[0]?.id || 'flux_appro');
     }
   }, [currentUser, activePersona, currentView]);
 
   useEffect(() => {
+    if (currentUser && currentView && currentView !== 'public') {
+      persistSessionView(currentView);
+    }
+  }, [currentUser, currentView]);
+
+  useEffect(() => {
+    if (repriseSession) return;
     if (!currentUser && currentView !== 'public') {
       setCurrentView('public');
       setActivePersona(null);
     }
-  }, [currentUser, currentView]);
+  }, [currentUser, currentView, repriseSession]);
 
   const handleHelpdeskTicketSubmit = (ticketData) => {
     setHelpdeskTickets((prev) => [ticketData, ...prev]);
@@ -561,16 +761,18 @@ export default function App() {
     setActiveNavTab,
   };
 
+  if (repriseSession && !currentUser) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] text-[#0E2A4F] flex items-center justify-center">
+        <p className="text-sm font-semibold">Reprise de la session…</p>
+      </div>
+    );
+  }
+
   if (currentView === 'public' || currentView === 'direction_home' || currentView === 'direction_modules' || currentView === 'direction_dashboard') {
     return (
       <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
-        {realtimeNotification && (
-          <div className="fixed top-20 right-6 z-50 bg-[#2E68B4] text-white px-4 py-3 rounded-md shadow-2xl border border-blue-400 flex items-center gap-3 animate-in slide-in-from-top-4 duration-300">
-            <CheckCircle2 className="w-5 h-5 text-emerald-300" />
-            <span className="text-xs font-bold">{realtimeNotification}</span>
-            <button onClick={() => setRealtimeNotification(null)} className="ml-2 text-white/80 hover:text-white font-bold">✕</button>
-          </div>
-        )}
+        <AppToast message={realtimeNotification} onClose={() => setRealtimeNotification(null)} />
 
         {currentView === 'public' && <Header {...headerProps} />}
 
@@ -681,13 +883,7 @@ export default function App() {
 
   return (
     <div className="h-screen overflow-hidden bg-[#F4F5F7] text-[#0F172A] flex flex-col font-sans relative">
-      {realtimeNotification && (
-        <div className="fixed top-20 right-6 z-50 bg-[#00A651] text-white px-4 py-3 rounded-md shadow-2xl border border-emerald-300 flex items-center gap-3 animate-in slide-in-from-top-4 duration-300">
-          <CheckCircle2 className="w-5 h-5" />
-          <span className="text-xs font-bold">{realtimeNotification}</span>
-          <button onClick={() => setRealtimeNotification(null)} className="ml-2 text-white/80 hover:text-white font-bold">✕</button>
-        </div>
-      )}
+      <AppToast message={realtimeNotification} onClose={() => setRealtimeNotification(null)} />
 
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {sidebarMode !== 'hidden' && (
@@ -718,6 +914,12 @@ export default function App() {
           )}
           {currentView === 'patrimoine' && (
             <PatrimoineManager activePersona={sessionPersona} />
+          )}
+          {currentView === 'referentiel' && (
+            <ReferentielManager activePersona={sessionPersona} />
+          )}
+          {currentView === 'parametrage' && (
+            <ParametrageSecurite utilisateur={sessionPersona} />
           )}
           {currentView === 'centre_services' && (
             <CentreServices
