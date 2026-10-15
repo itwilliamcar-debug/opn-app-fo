@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import SuiviLogistiqueDirect from '../common/SuiviLogistiqueDirect';
 import { 
   Building2, 
   MapPin, 
@@ -397,7 +398,8 @@ export default function PublicPortal({
               </div>
 
               <div className="max-w-7xl mx-auto px-4 sm:px-8 relative z-10">
-                <div className="max-w-3xl space-y-5">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+                <div className="lg:col-span-7 max-w-3xl space-y-5">
                     
                     <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 border border-white/20 text-xs text-white shadow-xs">
                       <span className="w-2.5 h-2.5 rounded-full bg-[#00FF87] animate-pulse shadow-[0_0_8px_#00FF87]" />
@@ -450,6 +452,10 @@ export default function PublicPortal({
                       </button>
                     </div>
 
+                </div>
+                <div className="lg:col-span-5">
+                  <SuiviLogistiqueDirect />
+                </div>
                 </div>
               </div>
             </section>

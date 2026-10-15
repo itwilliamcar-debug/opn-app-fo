@@ -37,7 +37,6 @@ import {
   FileSpreadsheet
 } from 'lucide-react';
 import { USERS_PERSONAS } from '../../data/usersPersonas';
-import SuiviLogistiqueDirect from '../common/SuiviLogistiqueDirect';
 import SpinnerPourcentage from '../common/SpinnerPourcentage';
 import { GABON_PROVINCES } from '../../data/gabonProvinces';
 import { fetchAuditLogs } from '../../services/api';
@@ -615,10 +614,6 @@ export default function AdminAudit({
         <div className="p-3 rounded-md bg-amber-50 border border-amber-200 text-amber-900 text-xs font-semibold">
           Session Sanctum inactive — le journal d&apos;audit ANINF live nécessite Accès Intranet. La gestion locale des profils utilisateurs IAM reste 100% opérationnelle.
         </div>
-      )}
-
-      {(activePersona?.codeRole === 'SUPER_ADMIN' || activePersona?.code_role === 'SUPER_ADMIN') && (
-        <SuiviLogistiqueDirect className="max-w-xl" />
       )}
 
       {/* Header Principal du Module Admin */}
