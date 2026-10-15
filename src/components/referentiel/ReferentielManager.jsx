@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Eye, Pencil, Trash2 } from 'lucide-react';
+import { Eye, Info, Pencil, RefreshCw, Trash2, X } from 'lucide-react';
 import { apiRequest } from '../../services/api';
 import { droit, libelleDroits } from '../../data/rbacMatrix';
 import { LigneChargementTableau } from '../common/SpinnerPourcentage';
@@ -8,10 +8,123 @@ import { LigneChargementTableau } from '../common/SpinnerPourcentage';
 const VIDE = { ressource: '', colonnes: [], filtres: [], champs: [], rows: [], meta: null };
 const TAILLES = [3, 5, 10, 15, 20, 30, 50];
 
+function valeurOption(option) {
+  return option && typeof option === 'object' ? String(option.value) : String(option);
+}
+
 function libelleOption(option) {
+  if (option && typeof option === 'object') return option.label;
   if (option === '1') return 'Oui';
   if (option === '0') return 'Non';
   return option;
+}
+
+/**
+ * Liste déroulante avec une recherche à l'intérieur du menu.
+ * Sert aux filtres du tableau et aux champs Province, Ville et Responsable.
+ * Si dependante est vrai et qu'aucune province n'est choisie, la liste reste fermée.
+ */
+function ListeDeroulante({ label, value, options, onChange, desactive = false, obligatoire = false, placeholder = 'Choisir', messageBloque = '' }) {
+  const [ouvert, setOuvert] = useState(false);
+  const [cherche, setCherche] = useState('');
+  const [position, setPosition] = useState(null);
+  const boutonRef = useRef(null);
+  const panneauRef = useRef(null);
+  const saisieRef = useRef(null);
+  const bloque = desactive;
+
+  useLayoutEffect(() => {
+    if (!ouvert) return undefined;
+    const placer = () => {
+      const cadre = boutonRef.current?.getBoundingClientRect();
+      if (!cadre) return;
+      setPosition({ top: cadre.bottom + 4, left: cadre.left, width: Math.max(cadre.width, 220) });
+    };
+    placer();
+    saisieRef.current?.focus();
+    window.addEventListener('resize', placer);
+    window.addEventListener('scroll', placer, true);
+    return () => {
+      window.removeEventListener('resize', placer);
+      window.removeEventListener('scroll', placer, true);
+    };
+  }, [ouvert]);
+
+  useEffect(() => {
+    if (!ouvert) return undefined;
+    const fermerSiDehors = (event) => {
+      if (boutonRef.current?.contains(event.target) || panneauRef.current?.contains(event.target)) return;
+      setOuvert(false);
+    };
+    document.addEventListener('mousedown', fermerSiDehors);
+    return () => document.removeEventListener('mousedown', fermerSiDehors);
+  }, [ouvert]);
+
+  const visibles = (options || []).filter((option) => libelleOption(option).toLowerCase().includes(cherche.trim().toLowerCase()));
+  const choisi = value
+    ? libelleOption((options || []).find((option) => valeurOption(option) === String(value)) || value)
+    : (bloque && messageBloque ? messageBloque : placeholder);
+
+  return (
+    <div className="text-xs text-slate-600">
+      {label && (
+        <span>
+          {label}
+          {obligatoire ? ' *' : ''}
+        </span>
+      )}
+      <button
+        type="button"
+        ref={boutonRef}
+        disabled={bloque}
+        onClick={() => {
+          if (bloque) return;
+          setOuvert((actuel) => !actuel);
+          setCherche('');
+        }}
+        className={`mt-1 w-full border border-slate-200 rounded px-2 py-1.5 text-sm text-left flex items-center justify-between gap-2 ${bloque ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white text-slate-800'}`}
+      >
+        <span className="truncate">{choisi}</span>
+        <span className="text-[10px] text-slate-400">{ouvert ? '▴' : '▾'}</span>
+      </button>
+      {ouvert && !bloque && position && createPortal(
+        <div
+          ref={panneauRef}
+          className="fixed z-[130] bg-white border border-slate-200 rounded shadow-xl p-1.5"
+          style={{ top: position.top, left: position.left, width: position.width }}
+        >
+          <input
+            ref={saisieRef}
+            value={cherche}
+            onChange={(e) => setCherche(e.target.value)}
+            placeholder="Rechercher…"
+            className="w-full border border-slate-200 rounded px-2 py-1.5 text-sm mb-1"
+          />
+          <ul className="max-h-52 overflow-y-auto">
+            <li>
+              <button type="button" onClick={() => { onChange(''); setOuvert(false); }} className="w-full text-left px-2 py-1.5 text-sm hover:bg-blue-50 rounded">{placeholder}</button>
+            </li>
+            {visibles.length === 0 && <li className="px-2 py-1.5 text-xs text-slate-500">Aucun résultat</li>}
+            {visibles.map((option) => {
+              const valeur = valeurOption(option);
+              return (
+                <li key={valeur}>
+                  <button
+                    type="button"
+                    onClick={() => { onChange(valeur); setOuvert(false); }}
+                    className={`w-full text-left px-2 py-1.5 text-sm hover:bg-blue-50 rounded ${String(value) === valeur ? 'bg-blue-50 font-semibold text-[#2E68B4]' : ''}`}
+                  >
+                    {libelleOption(option)}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
 }
 
 function FiltreRecherche({ label, value, options, onChange }) {
@@ -50,7 +163,9 @@ function FiltreRecherche({ label, value, options, onChange }) {
   }, [open]);
 
   const visibles = options.filter((option) => libelleOption(option).toLowerCase().includes(cherche.trim().toLowerCase()));
-  const choisi = value && value !== 'ALL' ? libelleOption(value) : 'Tous';
+  const choisi = value && value !== 'ALL'
+    ? libelleOption(options.find((option) => valeurOption(option) === value) || value)
+    : 'Tous';
 
   return (
     <div className="text-xs text-slate-600 min-w-[170px]">
@@ -82,17 +197,20 @@ function FiltreRecherche({ label, value, options, onChange }) {
               <button type="button" onClick={() => { onChange('ALL'); setOpen(false); }} className="w-full text-left px-2 py-1.5 text-sm hover:bg-blue-50 rounded">Tous</button>
             </li>
             {visibles.length === 0 && <li className="px-2 py-1.5 text-xs text-slate-500">Aucun résultat</li>}
-            {visibles.map((option) => (
-              <li key={option}>
-                <button
-                  type="button"
-                  onClick={() => { onChange(option); setOpen(false); }}
-                  className={`w-full text-left px-2 py-1.5 text-sm hover:bg-blue-50 rounded ${value === option ? 'bg-blue-50 font-semibold text-[#2E68B4]' : ''}`}
-                >
-                  {libelleOption(option)}
-                </button>
-              </li>
-            ))}
+            {visibles.map((option) => {
+              const valeur = valeurOption(option);
+              return (
+                <li key={valeur}>
+                  <button
+                    type="button"
+                    onClick={() => { onChange(valeur); setOpen(false); }}
+                    className={`w-full text-left px-2 py-1.5 text-sm hover:bg-blue-50 rounded ${value === valeur ? 'bg-blue-50 font-semibold text-[#2E68B4]' : ''}`}
+                  >
+                    {libelleOption(option)}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </div>,
         document.body
@@ -115,6 +233,7 @@ export default function ReferentielManager({ activePersona }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(null);
+  const [aideOuverte, setAideOuverte] = useState(false);
 
   useEffect(() => {
     apiRequest('/referentiel')
@@ -162,6 +281,13 @@ export default function ReferentielManager({ activePersona }) {
   async function enregistrer(event) {
     event.preventDefault();
     setError('');
+    const manquant = (data.champs || []).find((champ) => champ.required && champ.key !== 'password' && !String(form.values[champ.key] || '').trim());
+    if (manquant) {
+      setError(manquant.dependsOn && !form.values[manquant.dependsOn]
+        ? 'Choisissez d’abord une province, puis une ville.'
+        : `Le champ « ${manquant.label} » est obligatoire.`);
+      return;
+    }
     const body = { ...form.values };
     if (form.mode === 'edit' && !body.password) delete body.password;
     try {
@@ -191,9 +317,12 @@ export default function ReferentielManager({ activePersona }) {
     <div className="space-y-4 max-w-6xl">
       <div>
         <p className="text-[11px] font-bold uppercase tracking-wider text-[#2E68B4]">Données de base</p>
-        <h1 className="text-xl font-black text-slate-900">Référentiel</h1>
-        <p className="text-sm text-slate-600 mt-1">Création, modification et suppression des médicaments, directions, antennes, agents, structures et fournisseurs.</p>
-        <p className="text-xs text-slate-500 mt-1">Droits sur cette page : {libelleDroits(activePersona, 'referentiel')}.</p>
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-black text-slate-900">Référentiel</h1>
+          <button type="button" onClick={() => setAideOuverte(true)} className="w-6 h-6 rounded-full border border-slate-300 text-[#2E68B4] inline-flex items-center justify-center" title="Explications" aria-label="Explications">
+            <Info className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -231,6 +360,9 @@ export default function ReferentielManager({ activePersona }) {
               onChange={(value) => { setFiltres((prev) => ({ ...prev, [filtre.key]: value })); setPage(1); }}
             />
           ))}
+          <button type="button" onClick={() => load()} disabled={loading} className="w-8 h-8 inline-flex items-center justify-center rounded border border-slate-200 text-slate-600 hover:bg-slate-50" title="Actualiser" aria-label="Actualiser">
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          </button>
           {peutCreer && <button type="button" onClick={ouvrirCreation} className="px-3 py-1.5 text-xs font-bold rounded bg-[#00A651] text-white">Nouveau</button>}
         </div>
 
@@ -294,25 +426,70 @@ export default function ReferentielManager({ activePersona }) {
         </div>
       </div>
 
+      {aideOuverte && (
+        <div className="fixed inset-0 z-[110] bg-slate-900/50 flex items-center justify-center p-4" onMouseDown={() => setAideOuverte(false)}>
+          <div className="bg-white rounded-lg border border-slate-200 shadow-xl w-full max-w-lg p-5" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-sm font-bold text-slate-900">Référentiel</h2>
+              <button type="button" onClick={() => setAideOuverte(false)} className="p-1 rounded text-slate-500 hover:bg-slate-100" aria-label="Fermer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-sm text-slate-600 mt-3">Création, modification et suppression des médicaments, directions, provinces, villes, antennes, agents, structures et fournisseurs.</p>
+            <p className="text-sm text-slate-600 mt-2">Pour une antenne, la province se choisit en premier. La liste des villes reste fermée tant que la province n’est pas choisie, puis elle ne propose que les villes de cette province. Le responsable se choisit parmi les agents.</p>
+            <p className="text-sm text-slate-600 mt-2">Une province exige le nom de son chef-lieu. Ce chef-lieu est aussi enregistré comme ville de la province.</p>
+            <p className="text-xs text-slate-500 mt-3">Droits sur cette page : {libelleDroits(activePersona, 'referentiel')}.</p>
+          </div>
+        </div>
+      )}
+
       {form && (
         <div className="fixed inset-0 z-[100] bg-slate-900/50 flex items-start justify-center px-4 pt-24 overflow-y-auto">
           <form onSubmit={(event) => { if (form.mode === 'view') { event.preventDefault(); return; } enregistrer(event); }} className="bg-white rounded-lg border border-slate-200 shadow-xl w-full max-w-2xl p-5 mb-8 grid grid-cols-1 sm:grid-cols-2 gap-3">
             <h2 className="sm:col-span-2 text-sm font-bold text-slate-900">
-              {form.mode === 'create' ? 'Nouvel élément' : form.mode === 'view' ? 'Détail' : 'Modifier l\'élément'}
+              {form.mode === 'create' ? `Nouveau — ${data.label || 'élément'}` : form.mode === 'view' ? `Détail — ${data.label || 'élément'}` : `Modifier — ${data.label || 'élément'}`}
             </h2>
-            {(data.champs || []).filter((champ) => form.mode !== 'view' || champ.key !== 'password').map((champ) => (
-              <label key={champ.key} className="text-xs text-slate-600">
-                {champ.label}
-                <input
-                  type={champ.type === 'number' ? 'number' : 'text'}
-                  required={form.mode !== 'view' && champ.required && !(champ.key === 'password' && form.mode === 'edit')}
-                  readOnly={form.mode === 'view'}
-                  value={form.values[champ.key] ?? ''}
-                  onChange={(e) => setForm((prev) => ({ ...prev, values: { ...prev.values, [champ.key]: e.target.value } }))}
-                  className={`mt-1 w-full border border-slate-200 rounded px-2 py-1.5 text-sm ${form.mode === 'view' ? 'bg-slate-50' : ''}`}
-                />
-              </label>
-            ))}
+            {error && <p className="sm:col-span-2 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded px-3 py-2">{error}</p>}
+            {(data.champs || []).filter((champ) => form.mode !== 'view' || champ.key !== 'password').map((champ) => {
+              const lecture = form.mode === 'view';
+              const obligatoire = !lecture && champ.required && !(champ.key === 'password' && form.mode === 'edit');
+              const classe = `mt-1 w-full border border-slate-200 rounded px-2 py-1.5 text-sm ${lecture ? 'bg-slate-50' : 'bg-white'}`;
+              const provinceChoisie = Boolean(form.values[champ.dependsOn]);
+              const villeBloquee = Boolean(champ.dependsOn) && !provinceChoisie;
+              const options = (champ.options || []).filter((option) => !champ.dependsOn || String(option.parent) === String(form.values[champ.dependsOn] || ''));
+              if (champ.type === 'select') {
+                return (
+                  <ListeDeroulante
+                    key={champ.key}
+                    label={champ.label}
+                    value={form.values[champ.key] ?? ''}
+                    options={villeBloquee ? [] : options}
+                    desactive={lecture || villeBloquee}
+                    obligatoire={obligatoire && !villeBloquee}
+                    placeholder="Choisir"
+                    messageBloque="Choisir une province d'abord"
+                    onChange={(valeur) => setForm((prev) => {
+                      const values = { ...prev.values, [champ.key]: valeur };
+                      if (champ.key === 'province_id') values.ville_id = '';
+                      return { ...prev, values };
+                    })}
+                  />
+                );
+              }
+              return (
+                <label key={champ.key} className="text-xs text-slate-600">
+                  {champ.label}{obligatoire ? ' *' : ''}
+                  <input
+                    type={champ.type === 'number' ? 'number' : 'text'}
+                    required={obligatoire}
+                    readOnly={lecture}
+                    value={form.values[champ.key] ?? ''}
+                    onChange={(e) => setForm((prev) => ({ ...prev, values: { ...prev.values, [champ.key]: e.target.value } }))}
+                    className={classe}
+                  />
+                </label>
+              );
+            })}
             <div className="sm:col-span-2 flex gap-2">
               {form.mode !== 'view' && <button className="px-3 py-2 text-xs font-bold rounded bg-[#0E2A4F] text-white">Enregistrer</button>}
               <button type="button" onClick={() => setForm(null)} className="px-3 py-2 text-xs font-bold rounded border border-slate-300">{form.mode === 'view' ? 'Fermer' : 'Annuler'}</button>
