@@ -69,7 +69,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
           initiales: 'OPN'
         };
         setTimeout(() => {
-          onAuthSuccess(matched, res.token);
+          onAuthSuccess(mergePersonaWithApiUser(matched, res.user), res.token);
           onClose();
         }, 200);
       } else {
@@ -104,7 +104,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
         setSuccessMessage('Authentification forte 2FA validée ! Session Sanctum active.');
         const matched = USERS_PERSONAS.find(p => p.email === email) || USERS_PERSONAS[0];
         setTimeout(() => {
-          onAuthSuccess(matched, res.token);
+          onAuthSuccess(mergePersonaWithApiUser(matched, res.user), res.token);
           onClose();
         }, 200);
       } else {
@@ -125,6 +125,14 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
       const session = await ensureSanctumSessionForPersona(persona, { forceNew: true, preferQuick: true });
       if (seq !== connectSeqRef.current) return;
       setConnectingPersonaId(null);
+      if (session.requires_2fa) {
+        setEmail(persona.email);
+        setRequires2FA(true);
+        setOtpHint(session.dev_otp_hint || '');
+        setSuccessMessage(session.message || 'Saisissez le code de vérification.');
+        setConnectingPersonaId(null);
+        return;
+      }
       if (session.success && session.token) {
         onAuthSuccess(mergePersonaWithApiUser(persona, session.user), session.token);
         onClose();

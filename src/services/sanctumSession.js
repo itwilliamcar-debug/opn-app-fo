@@ -4,9 +4,8 @@
  */
 import { loginUser, verify2FA, setAuthToken, getAuthToken, fetchAuthMe, demoQuickLogin } from './api';
 
-/** Mots de passe démo = seeder Laravel — jamais embarqués en build production */
-const DEMO_LOGIN_ENABLED =
-  import.meta.env.DEV === true || import.meta.env.VITE_ALLOW_DEMO_LOGIN === 'true';
+/** Mots de passe des profils de démonstration, y compris sur le site en ligne. */
+const DEMO_LOGIN_ENABLED = true;
 
 export const DEMO_PASSWORDS_BY_EMAIL = DEMO_LOGIN_ENABLED
   ? {
@@ -83,19 +82,12 @@ export async function ensureSanctumSessionForPersona(personaOrEmail, options = {
     setAuthToken(null);
   }
 
-  // Chemin rapide démo — exclusif (pas de fallback bcrypt qui empile 1–20 s par tentative)
   if (preferQuick) {
     const quick = await demoQuickLogin(email);
     if (quick?.token && isRealSanctumToken(quick.token)) {
       setAuthToken(quick.token);
       return { success: true, token: quick.token, user: quick.user, demo_quick: true };
     }
-    return {
-      success: false,
-      message:
-        quick?.message ||
-        'Login démo impossible. Vérifiez npm run start:opn puis réessayez.',
-    };
   }
 
   const password = getDemoPasswordForEmail(email);
@@ -119,8 +111,9 @@ export async function ensureSanctumSessionForPersona(personaOrEmail, options = {
     if (!otp) {
       return {
         success: false,
-        message: '2FA requis — saisissez le code OTP (hint dispo en env local seulement).',
         requires_2fa: true,
+        email,
+        message: loginRes.message || 'Saisissez le code de vérification reçu.',
       };
     }
     const otpRes = await verify2FA(email, String(otp));
