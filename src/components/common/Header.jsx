@@ -23,6 +23,11 @@ import { PROFILS_DEFAUT } from '../../data/usersPersonas';
 import { getCodeRole } from '../../data/rbacMatrix';
 import OpnLogo from './OpnLogo';
 
+/** Libellé du profil de sécurité de la personne connectée. */
+function typeProfilConnecte(utilisateur) {
+  return utilisateur?.profil?.libelle || utilisateur?.role || '';
+}
+
 export default function Header({ 
   currentView, 
   setCurrentView, 
@@ -347,9 +352,14 @@ export default function Header({
                     alt=""
                     className="w-6 h-6 rounded-full object-cover border border-slate-300 shrink-0"
                   />
-                  <span className="text-xs font-semibold text-slate-800 max-w-[220px] truncate">
+                  <span className="text-xs font-semibold text-slate-800 max-w-[200px] truncate">
                     {activeUser.nom || activeUser.name || 'Utilisateur'}
                   </span>
+                  {typeProfilConnecte(activeUser) && (
+                    <span className="text-[10px] font-bold text-[#0E2A4F] bg-white border border-slate-200 rounded px-1.5 py-0.5 max-w-[190px] truncate" title={typeProfilConnecte(activeUser)}>
+                      {typeProfilConnecte(activeUser)}
+                    </span>
+                  )}
                   <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${accountMenuOpen ? 'rotate-180' : ''}`} />
                 </button>
                 {accountMenuOpen && accountMenuPos && createPortal(
@@ -550,13 +560,15 @@ export default function Header({
                       alt={activeUser.nom}
                       className="w-6 h-6 rounded-full object-cover border border-slate-300 shrink-0"
                     />
-                    <div className="text-left hidden xl:block pr-1">
+                    <div className="text-left hidden xl:flex items-center gap-1.5 pr-1">
                       <div className="text-xs font-semibold text-slate-800 leading-tight truncate max-w-[130px]">
                         {activeUser.nom?.split(' ')[1] || activeUser.nom}
                       </div>
-                      <div className="text-[10px] text-[#00A651] font-semibold truncate max-w-[130px]">
-                        {activeUser.role}
-                      </div>
+                      {typeProfilConnecte(activeUser) && (
+                        <div className="text-[10px] font-bold text-[#0E2A4F] bg-white border border-slate-200 rounded px-1.5 py-0.5 truncate max-w-[140px]" title={typeProfilConnecte(activeUser)}>
+                          {typeProfilConnecte(activeUser)}
+                        </div>
+                      )}
                     </div>
                     <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#2E68B4]" />
                   </button>

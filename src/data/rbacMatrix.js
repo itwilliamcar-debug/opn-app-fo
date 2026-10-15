@@ -641,7 +641,12 @@ export function getRoleModules(codeRole) {
     return [MODULE_FLUX, MODULE_REFERENTIEL, MODULE_PATRIMOINE, MODULE_SERVICES, MODULE_PARAMETRAGE];
   }
   if (codeRole === 'SUPER_ADMIN') {
-    return [...workflow, ...(ROLE_MODULES.SUPER_ADMIN || [])];
+    return MODULES_DROITS.map((item) => ({
+      id: item.id,
+      label: item.label,
+      badge: item.badge,
+      badgeColor: item.badgeColor,
+    }));
   }
   return workflow;
 }
