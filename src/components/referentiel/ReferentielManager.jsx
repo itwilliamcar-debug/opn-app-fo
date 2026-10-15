@@ -8,6 +8,22 @@ import { LigneChargementTableau } from '../common/SpinnerPourcentage';
 const VIDE = { ressource: '', colonnes: [], filtres: [], champs: [], rows: [], meta: null };
 const TAILLES = [3, 5, 10, 15, 20, 30, 50];
 
+/* Onglets connus dès l'ouverture : ils restent visibles pendant le chargement du tableau. */
+const ONGLETS = [
+  { key: 'medicaments', label: 'Médicaments' },
+  { key: 'directions', label: 'Directions' },
+  { key: 'provinces', label: 'Provinces' },
+  { key: 'villes', label: 'Villes' },
+  { key: 'antennes', label: 'Antennes' },
+  { key: 'utilisateurs', label: 'Agents et utilisateurs' },
+  { key: 'types_structures', label: 'Types de structures' },
+  { key: 'departements', label: 'Départements' },
+  { key: 'structures', label: 'Structures et pharmacies' },
+  { key: 'pays', label: 'Pays' },
+  { key: 'types_fournisseurs', label: 'Types de fournisseurs' },
+  { key: 'fournisseurs', label: 'Fournisseurs' },
+];
+
 function valeurOption(option) {
   return option && typeof option === 'object' ? String(option.value) : String(option);
 }
@@ -223,7 +239,7 @@ export default function ReferentielManager({ activePersona }) {
   const peutCreer = droit(activePersona, 'referentiel', 'creer');
   const peutLire = droit(activePersona, 'referentiel', 'lire');
   const peutModifier = droit(activePersona, 'referentiel', 'modifier');
-  const [ressources, setRessources] = useState([]);
+  const [ressources, setRessources] = useState(ONGLETS);
   const [actif, setActif] = useState('medicaments');
   const [data, setData] = useState(VIDE);
   const [q, setQ] = useState('');
@@ -237,7 +253,9 @@ export default function ReferentielManager({ activePersona }) {
 
   useEffect(() => {
     apiRequest('/referentiel')
-      .then((res) => setRessources(res.ressources || []))
+      .then((res) => {
+        if (Array.isArray(res.ressources) && res.ressources.length) setRessources(res.ressources);
+      })
       .catch((err) => setError(err.message));
   }, []);
 
@@ -253,6 +271,10 @@ export default function ReferentielManager({ activePersona }) {
     try {
       const res = await apiRequest(`/referentiel/${actif}?${params.toString()}`);
       setData(res);
+      setRessources((liste) => {
+        if (liste.some((item) => item.key === actif)) return liste;
+        return [...liste, { key: actif, label: res.label || actif }];
+      });
     } catch (err) {
       setError(err.message || 'Impossible de charger le référentiel.');
     } finally {
@@ -284,11 +306,14 @@ export default function ReferentielManager({ activePersona }) {
     const manquant = (data.champs || []).find((champ) => champ.required && champ.key !== 'password' && !String(form.values[champ.key] || '').trim());
     if (manquant) {
       setError(manquant.dependsOn && !form.values[manquant.dependsOn]
-        ? 'Choisissez d’abord une province, puis une ville.'
+        ? 'Choisissez d’abord une province.'
         : `Le champ « ${manquant.label} » est obligatoire.`);
       return;
     }
     const body = { ...form.values };
+    Object.keys(body).forEach((cle) => {
+      if (body[cle] === '') delete body[cle];
+    });
     if (form.mode === 'edit' && !body.password) delete body.password;
     try {
       await apiRequest(
@@ -375,9 +400,9 @@ export default function ReferentielManager({ activePersona }) {
               </tr>
             </thead>
             <tbody>
-              {loading && <LigneChargementTableau colonnes={(data.colonnes || []).length + 1} libelle="Chargement des données…" />}
+              {loading && <LigneChargementTableau colonnes={Math.max((data.colonnes || []).length + 1, 1)} libelle="Chargement des données…" />}
               {!loading && (data.rows || []).length === 0 && <tr><td className="py-3 text-slate-500" colSpan={(data.colonnes || []).length + 1}>Aucun élément.</td></tr>}
-              {(data.rows || []).map((row) => (
+              {!loading && (data.rows || []).map((row) => (
                 <tr key={row.id} className="border-b border-slate-100">
                   {(data.colonnes || []).map((col) => <td key={col.key} className="py-2 pr-3 text-slate-800">{row[col.key] ?? '—'}</td>)}
                   <td className="py-2 whitespace-nowrap">
@@ -435,9 +460,11 @@ export default function ReferentielManager({ activePersona }) {
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <p className="text-sm text-slate-600 mt-3">Création, modification et suppression des médicaments, directions, provinces, villes, antennes, agents, structures et fournisseurs.</p>
+            <p className="text-sm text-slate-600 mt-3">Création, modification et suppression des médicaments, directions, provinces, villes, antennes, agents, structures, pays, types de fournisseurs et fournisseurs.</p>
             <p className="text-sm text-slate-600 mt-2">Pour une antenne, la province se choisit en premier. La liste des villes reste fermée tant que la province n’est pas choisie, puis elle ne propose que les villes de cette province. Le responsable se choisit parmi les agents.</p>
             <p className="text-sm text-slate-600 mt-2">Une province exige le nom de son chef-lieu. Ce chef-lieu est aussi enregistré comme ville de la province.</p>
+            <p className="text-sm text-slate-600 mt-2">Pour un fournisseur, le pays et le type se choisissent dans des listes. Ces listes se gèrent dans les onglets Pays et Types de fournisseurs.</p>
+            <p className="text-sm text-slate-600 mt-2">Pour une structure, le type, la province, l’antenne, le département, la ville et le responsable sont des listes. L’antenne, le département et la ville restent fermés tant que la province n’est pas choisie.</p>
             <p className="text-xs text-slate-500 mt-3">Droits sur cette page : {libelleDroits(activePersona, 'referentiel')}.</p>
           </div>
         </div>
@@ -470,7 +497,9 @@ export default function ReferentielManager({ activePersona }) {
                     messageBloque="Choisir une province d'abord"
                     onChange={(valeur) => setForm((prev) => {
                       const values = { ...prev.values, [champ.key]: valeur };
-                      if (champ.key === 'province_id') values.ville_id = '';
+                      (data.champs || []).forEach((autre) => {
+                        if (autre.dependsOn === champ.key) values[autre.key] = '';
+                      });
                       return { ...prev, values };
                     })}
                   />

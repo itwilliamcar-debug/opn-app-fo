@@ -341,18 +341,15 @@ export const USERS_PERSONAS = [
   }
 ];
 
-/** Cinq profils de connexion. Les autres personas restent disponibles pour l'historique, mais ne sont plus proposés. */
-export const PROFILS_DEFAUT_IDS = ['OPN-ADM-001', 'OPN-MET-001', 'OPN-DIR-001', 'OPN-FIN-001', 'OPN-APP-001', 'OPN-DEM-PH01'];
+/** Tous les profils de connexion d'origine. Les deux profils protégés gardent leur libellé. */
+const LIBELLES_PROFILS_PROTEGES = {
+  'OPN-ADM-001': 'Super administrateur / Admin IT',
+  'OPN-MET-001': 'Admin métier',
+};
 
-export const PROFILS_DEFAUT = PROFILS_DEFAUT_IDS.map((id) => {
-  const persona = USERS_PERSONAS.find((item) => item.id === id);
-  const libelles = {
-    'OPN-ADM-001': 'Super administrateur / Admin IT',
-    'OPN-MET-001': 'Admin métier',
-    'OPN-DIR-001': 'Directeur général',
-    'OPN-FIN-001': 'Directrice administrative et financière',
-    'OPN-APP-001': 'Directrice des approvisionnements nationaux',
-    'OPN-DEM-PH01': 'Demandeur',
-  };
-  return { ...persona, role: libelles[id] || persona.role };
-});
+export const PROFILS_DEFAUT_IDS = USERS_PERSONAS.map((persona) => persona.id);
+
+export const PROFILS_DEFAUT = USERS_PERSONAS.map((persona) => ({
+  ...persona,
+  role: LIBELLES_PROFILS_PROTEGES[persona.id] || persona.role,
+}));
