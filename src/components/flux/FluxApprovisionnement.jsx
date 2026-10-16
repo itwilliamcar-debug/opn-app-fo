@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { createPortal } from 'react-dom';
 import { Info, Loader2, Plus, RefreshCw, Search, X } from 'lucide-react';
 import { LigneChargementTableau } from '../common/SpinnerPourcentage';
-import { BoutonVoir } from '../common/BoutonsActionsTableau';
+import { BoutonSupprimer, BoutonVoir } from '../common/BoutonsActionsTableau';
 import { apiRequest } from '../../services/api';
 import { droit, getCodeRole, getFluxStage, libelleDroits } from '../../data/rbacMatrix';
 
@@ -214,6 +214,7 @@ export default function FluxApprovisionnement({ activePersona }) {
   const [taillePage, setTaillePage] = useState(5);
   const [pageCourante, setPageCourante] = useState(1);
   const [aideOuverte, setAideOuverte] = useState(false);
+  const [peutSupprimer, setPeutSupprimer] = useState(false);
 
   const antenneDuCompte = activePersona?.antenne_id || activePersona?.province_id || activePersona?.provinceId;
   const codeRoleCompte = activePersona?.codeRole || activePersona?.code_role;
@@ -240,6 +241,7 @@ export default function FluxApprovisionnement({ activePersona }) {
       setStage(flux.stage || localStage);
       setCommandes(flux.commandes || []);
       setCompteurs(flux.compteurs || { total: 0, recues: 0, transmises: 0, dispersees: 0 });
+      setPeutSupprimer(Boolean(flux.peut_supprimer));
       setAntennes(ants.antennes || []);
       setProduits((meds.produits || []).slice(0, 80));
       if (silent) setError('');
@@ -324,6 +326,18 @@ export default function FluxApprovisionnement({ activePersona }) {
     setError('');
     try {
       await apiRequest(path, { method: 'POST', body: JSON.stringify({}) });
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function supprimerCommande(commande) {
+    if (!window.confirm(`Supprimer la commande ${commande.numero_commande} ?`)) return;
+    setError('');
+    try {
+      await apiRequest(`/flux/commandes/${commande.id}`, { method: 'DELETE' });
+      if (ligneOuverte === commande.id) setLigneOuverte(null);
       await load();
     } catch (err) {
       setError(err.message);
@@ -522,6 +536,9 @@ export default function FluxApprovisionnement({ activePersona }) {
                       <td className="px-3 py-2.5">
                         <div className="flex flex-wrap gap-1.5">
                           <BoutonVoir titre={ouverte ? 'Fermer le détail' : 'Voir le détail'} onClick={() => setLigneOuverte(ouverte ? null : commande.id)} />
+                          {peutSupprimer && (
+                            <BoutonSupprimer titre="Supprimer la commande" onClick={() => supprimerCommande(commande)} />
+                          )}
                           {peutTransmettre && commande.statut === 'SOUMISE_ANTENNE' && (
                             <button type="button" onClick={() => action(`/flux/commandes/${commande.id}/transmettre`)} className="px-2 py-1 font-bold rounded bg-[#2E68B4] text-white">Transmettre</button>
                           )}

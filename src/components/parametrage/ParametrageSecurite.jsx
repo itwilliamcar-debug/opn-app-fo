@@ -13,7 +13,14 @@ const ONGLETS = [
   ['matrice', 'Profils → habilitations'],
 ];
 
-const VIDE = { creer: false, lire: false, modifier: false, valider: false };
+const VIDE = { creer: false, lire: false, modifier: false, valider: false, supprimer: false };
+const DRAPEAUX_GESTION = [
+  ['creer', 'Créer'],
+  ['lire', 'Lire'],
+  ['modifier', 'Modifier'],
+  ['valider', 'Valider'],
+  ['supprimer', 'Supprimer'],
+];
 
 function codeDepuisLibelle(libelle) {
   return String(libelle || '')
@@ -177,6 +184,7 @@ export default function ParametrageSecurite({ utilisateur }) {
         lire: Boolean(liaison.lire),
         modifier: Boolean(liaison.modifier),
         valider: Boolean(liaison.valider),
+        supprimer: Boolean(liaison.supprimer),
       };
     });
     setDroits(carte);
@@ -233,7 +241,7 @@ export default function ParametrageSecurite({ utilisateur }) {
         const assignations = habilitations.map((habilitation) => {
           const flags = droits[profil.id]?.[habilitation.id] || VIDE;
           if (estAcces(habilitation.code)) {
-            return { idHabilitation: habilitation.id, creer: false, lire: Boolean(flags.lire), modifier: false, valider: false };
+            return { idHabilitation: habilitation.id, creer: false, lire: Boolean(flags.lire), modifier: false, valider: false, supprimer: false };
           }
           return {
             idHabilitation: habilitation.id,
@@ -241,6 +249,7 @@ export default function ParametrageSecurite({ utilisateur }) {
             lire: Boolean(flags.lire),
             modifier: Boolean(flags.modifier),
             valider: Boolean(flags.valider),
+            supprimer: Boolean(flags.supprimer),
           };
         });
         await apiRequest(`/parametrage/profils/${profil.id}/habilitations`, {
@@ -290,13 +299,14 @@ export default function ParametrageSecurite({ utilisateur }) {
           libelle: fiche.libelle,
           niveau_validation: Number(fiche.niveau_validation || 0),
           habilitations: (fiche.habilitations || [])
-            .filter((row) => row.creer || row.lire || row.modifier || row.valider)
+            .filter((row) => row.creer || row.lire || row.modifier || row.valider || row.supprimer)
             .map((row) => ({
               id: row.id,
               creer: Boolean(row.creer),
               lire: Boolean(row.lire),
               modifier: Boolean(row.modifier),
               valider: Boolean(row.valider),
+              supprimer: Boolean(row.supprimer),
             })),
         };
         if (fiche.id) {
@@ -379,6 +389,7 @@ export default function ParametrageSecurite({ utilisateur }) {
         </div>
       </div>
       <input value={rechercheMatrice} onChange={(event) => { setRechercheMatrice(event.target.value); setPageMatrice(1); }} placeholder="Rechercher par code ou libellé…" className="w-full border border-slate-200 rounded px-3 py-2 text-sm" />
+      <p className="text-[11px] text-slate-500">Access : une case. Gestion : C créer, L lire, M modifier, V valider, S supprimer.</p>
       <div className={agrandi ? 'flex-1 min-h-0 overflow-auto border border-slate-200 rounded' : 'overflow-x-auto'}>
         <table className={`${agrandi ? 'text-sm' : 'text-xs'} min-w-max w-full border-separate border-spacing-0`}>
           <thead className="sticky top-0 z-20 bg-white">
@@ -415,10 +426,10 @@ export default function ParametrageSecurite({ utilisateur }) {
                   }
                   return (
                     <td key={profil.id} className="px-2 border-b border-slate-100 whitespace-nowrap text-center">
-                      {['creer', 'lire', 'modifier', 'valider'].map((champ) => (
-                        <label key={champ} className={`inline-flex items-center uppercase text-slate-500 ${agrandi ? 'mr-2 text-xs' : 'mr-1 text-[10px]'}`}>
+                      {DRAPEAUX_GESTION.map(([champ, libelle]) => (
+                        <label key={champ} title={libelle} className={`inline-flex items-center uppercase text-slate-500 ${agrandi ? 'mr-2 text-xs' : 'mr-1 text-[10px]'}`}>
                           {champ[0]}
-                          <input type="checkbox" disabled={!peutGererParametrage} className={agrandi ? 'ml-1 w-4 h-4' : 'ml-0.5'} checked={flags[champ]} onChange={(event) => majDroit(profil.id, habilitation.id, champ, event.target.checked)} />
+                          <input type="checkbox" disabled={!peutGererParametrage} className={agrandi ? 'ml-1 w-4 h-4' : 'ml-0.5'} checked={Boolean(flags[champ])} onChange={(event) => majDroit(profil.id, habilitation.id, champ, event.target.checked)} />
                         </label>
                       ))}
                     </td>
@@ -616,7 +627,7 @@ export default function ParametrageSecurite({ utilisateur }) {
             <div className="flex items-start justify-between gap-3 mb-3">
               <div>
                 <h2 className="text-lg font-semibold text-[#0E2A4F]">Matrice des habilitations</h2>
-                <p className="text-xs text-slate-500">Access : une case. Gestion : créer, lire, modifier, valider.</p>
+                <p className="text-xs text-slate-500">Access : une case. Gestion : créer, lire, modifier, valider, supprimer.</p>
               </div>
               <button type="button" onClick={() => setMatricePleine(false)} className="px-3 py-1.5 text-xs font-bold rounded border border-slate-300">Fermer</button>
             </div>
@@ -697,7 +708,7 @@ export default function ParametrageSecurite({ utilisateur }) {
                 {!fiche.id && (fiche.habilitations || []).map((row, index) => (
                   <div key={row.id} className="flex flex-wrap items-center gap-2 text-xs border-b border-slate-100 py-1">
                     <span className="w-40 font-mono">{row.code}</span>
-                    {(estAcces(row.code) ? ['lire'] : ['creer', 'lire', 'modifier', 'valider']).map((champ) => (
+                    {(estAcces(row.code) ? ['lire'] : DRAPEAUX_GESTION.map(([champ]) => champ)).map((champ) => (
                       <label key={champ} className="uppercase text-[10px] text-slate-500">
                         {estAcces(row.code) ? 'Oui' : champ[0]}
                         <input type="checkbox" className="ml-1" checked={Boolean(row[champ])} onChange={(event) => {

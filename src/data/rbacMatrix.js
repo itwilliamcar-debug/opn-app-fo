@@ -713,7 +713,7 @@ export function getVisibleModules(user) {
   const rows = Array.isArray(user?.habilitations) ? user.habilitations : [];
   const codes = new Set(
     rows
-      .filter((row) => String(row.code || '').startsWith('ACCESS_') && (row.acces || row.lire || row.creer || row.modifier || row.valider))
+      .filter((row) => String(row.code || '').startsWith('ACCESS_') && (row.acces || row.lire || row.creer || row.modifier || row.valider || row.supprimer))
       .map((row) => row.code)
   );
   if (!codes.size) return base;
@@ -736,7 +736,7 @@ export function droit(user, code, action = 'lire') {
   if (!Array.isArray(rows) || rows.length === 0) return true;
   const row = rows.find((item) => item.code === code);
   if (!row) return false;
-  if (action === 'acces') return Boolean(row.acces || row.lire || row.creer || row.modifier || row.valider);
+  if (action === 'acces') return Boolean(row.acces || row.lire || row.creer || row.modifier || row.valider || row.supprimer);
   return Boolean(row[action]);
 }
 
@@ -750,10 +750,11 @@ const ACTIONS_PAGE = [
   ['creer', 'Créer'],
   ['modifier', 'Modifier'],
   ['valider', 'Valider'],
+  ['supprimer', 'Supprimer'],
 ];
 
 function habilitationActive(ligne) {
-  return Boolean(ligne && (ligne.acces || ligne.lire || ligne.creer || ligne.modifier || ligne.valider));
+  return Boolean(ligne && (ligne.acces || ligne.lire || ligne.creer || ligne.modifier || ligne.valider || ligne.supprimer));
 }
 
 function libellePage(module, acces) {
@@ -799,8 +800,9 @@ export function libelleDroits(user, code) {
   const droits = [
     ['creer', 'ajouter'],
     ['lire', 'consulter'],
-    ['modifier', 'modifier et supprimer'],
+    ['modifier', 'modifier'],
     ['valider', 'valider'],
+    ['supprimer', 'supprimer'],
   ].filter(([action]) => droit(user, code, action)).map(([, label]) => label);
   return droits.length ? droits.join(', ') : 'consultation seule';
 }
