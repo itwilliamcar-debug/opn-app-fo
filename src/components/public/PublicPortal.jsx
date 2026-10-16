@@ -1864,7 +1864,7 @@ export default function PublicPortal({
                     </div>
                     <div className="flex items-center gap-2">
                       <Mail className="w-4 h-4 text-slate-500" />
-                      <span>Courriel officiel : <strong>contact@opn-gabon.com</strong></span>
+                      <span>Email officiel : <strong>contact@opn-gabon.com</strong></span>
                     </div>
                     <div className="flex items-center gap-2">
                       <Clock className="w-4 h-4 text-slate-500" />
@@ -1914,7 +1914,7 @@ export default function PublicPortal({
                       </div>
 
                       <div>
-                        <label className="block font-bold text-slate-700 mb-1">Adresse Courriel</label>
+                        <label className="block font-bold text-slate-700 mb-1">Email</label>
                         <input 
                           type="email"
                           required
@@ -2058,7 +2058,7 @@ export default function PublicPortal({
                   <li className="flex items-start gap-2.5">
                     <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
                     <div>
-                      <span className="block text-[10px] text-slate-400 font-semibold uppercase tracking-wide">Courriel</span>
+                      <span className="block text-[10px] text-slate-400 font-semibold uppercase tracking-wide">Email</span>
                       <a href="mailto:contact@opn-gabon.com" className="font-semibold text-white hover:opacity-80 break-all">
                         contact@opn-gabon.com
                       </a>

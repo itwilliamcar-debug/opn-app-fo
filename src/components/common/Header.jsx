@@ -28,6 +28,11 @@ function typeProfilConnecte(utilisateur) {
   return utilisateur?.profil?.libelle || utilisateur?.role || '';
 }
 
+/** Résumé visible du rattachement : province, antenne, direction. */
+function affectationConnectee(utilisateur) {
+  return [utilisateur?.province_nom, utilisateur?.antenne, utilisateur?.direction].filter(Boolean).join(' · ');
+}
+
 export default function Header({ 
   currentView, 
   setCurrentView, 
@@ -88,7 +93,7 @@ export default function Header({
       const button = accountMenuRef.current?.querySelector('button');
       if (!button) return;
       const rect = button.getBoundingClientRect();
-      const width = 224;
+      const width = 288;
       const left = Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8));
       setAccountMenuPos({ top: rect.bottom + 8, left });
     };
@@ -345,29 +350,43 @@ export default function Header({
                 <button
                   type="button"
                   onClick={() => setAccountMenuOpen((open) => !open)}
-                  className="h-9 flex items-center gap-2 px-2.5 rounded-lg bg-slate-100/80 hover:bg-slate-200/80 border border-slate-200 cursor-pointer transition-colors"
+                  className="min-h-9 flex items-center gap-2 px-2.5 py-1 rounded-lg bg-slate-100/80 hover:bg-slate-200/80 border border-slate-200 cursor-pointer transition-colors"
                 >
                   <img
                     src={activeUser.avatar || 'https://images.unsplash.com/photo-1531384441138-2736e62e0919?w=150&h=150&fit=crop&crop=faces&auto=format&q=80'}
                     alt=""
                     className="w-6 h-6 rounded-full object-cover border border-slate-300 shrink-0"
                   />
-                  <span className="text-xs font-semibold text-slate-800 max-w-[200px] truncate">
-                    {activeUser.nom || activeUser.name || 'Utilisateur'}
-                  </span>
-                  {typeProfilConnecte(activeUser) && (
-                    <span className="text-[10px] font-bold text-[#0E2A4F] bg-white border border-slate-200 rounded px-1.5 py-0.5 max-w-[190px] truncate" title={typeProfilConnecte(activeUser)}>
-                      {typeProfilConnecte(activeUser)}
+                  <span className="min-w-0 text-left">
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-xs font-semibold text-slate-800 max-w-[200px] truncate">
+                        {activeUser.nom || activeUser.name || 'Utilisateur'}
+                      </span>
+                      {typeProfilConnecte(activeUser) && (
+                        <span className="text-[10px] font-bold text-[#0E2A4F] bg-white border border-slate-200 rounded px-1.5 py-0.5 max-w-[190px] truncate" title={typeProfilConnecte(activeUser)}>
+                          {typeProfilConnecte(activeUser)}
+                        </span>
+                      )}
                     </span>
-                  )}
+                    {affectationConnectee(activeUser) && (
+                      <span className="block text-[10px] text-slate-500 truncate max-w-[320px]" title={affectationConnectee(activeUser)}>
+                        {affectationConnectee(activeUser)}
+                      </span>
+                    )}
+                  </span>
                   <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${accountMenuOpen ? 'rotate-180' : ''}`} />
                 </button>
                 {accountMenuOpen && accountMenuPos && createPortal(
                   <div
                     ref={accountPanelRef}
-                    className="fixed z-[80] w-56 bg-white border border-slate-200 rounded-lg shadow-xl p-1.5"
+                    className="fixed z-[80] w-72 bg-white border border-slate-200 rounded-lg shadow-xl p-1.5"
                     style={{ top: accountMenuPos.top, left: accountMenuPos.left }}
                   >
+                    {affectationConnectee(activeUser) && (
+                      <p className="px-2 py-2 text-[11px] text-slate-600 border-b border-slate-100 mb-1">
+                        {affectationConnectee(activeUser)}
+                      </p>
+                    )}
                     <button type="button" onClick={() => { setAccountMenuOpen(false); onOpenProfile?.(); }} className="w-full flex items-center gap-2 px-2 py-2 rounded-md text-left text-xs font-medium text-slate-700 hover:bg-slate-100">
                       <User className="w-3.5 h-3.5 text-slate-500" />
                       Mon profil

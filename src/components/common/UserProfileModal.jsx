@@ -6,14 +6,49 @@ import {
   Lock, 
   ShieldAlert, 
   Phone, 
-  Mail, 
-  Building2, 
-  MapPin, 
   CheckCircle2, 
-  HelpCircle,
   KeyRound,
-  AlertCircle
+  Eye,
+  Plus,
+  Pencil,
+  BadgeCheck,
+  Package,
+  LifeBuoy,
+  Library,
+  Building2,
+  Inbox,
+  Pill,
+  Receipt,
+  MessageCircle,
+  LayoutGrid,
 } from 'lucide-react';
+import { pagesAutorisees } from '../../data/rbacMatrix';
+
+const ICONES_PAGE = {
+  flux_appro: Package,
+  centre_services: LifeBuoy,
+  referentiel: Library,
+  patrimoine: Building2,
+  parametrage: KeyRound,
+  workspace: Inbox,
+  pharmacy: Pill,
+  billing: Receipt,
+  collaborative: MessageCircle,
+};
+
+const SENS_ACTION = {
+  Consulter: 'Ouvrir la page et lire les informations de votre périmètre.',
+  Créer: 'Déposer un nouvel élément sur cette page.',
+  Modifier: 'Corriger ou retirer un élément déjà enregistré.',
+  Valider: 'Approuver ou rejeter une étape du circuit.',
+};
+
+const ICONES_ACTION = {
+  Consulter: Eye,
+  Créer: Plus,
+  Modifier: Pencil,
+  Valider: BadgeCheck,
+};
 
 export default function UserProfileModal({ 
   isOpen, 
@@ -26,8 +61,13 @@ export default function UserProfileModal({
   const [telephone, setTelephone] = useState(activePersona?.telephone || '+241 074 00 00 00');
   const [selectedAvatar, setSelectedAvatar] = useState(activePersona?.avatar || '');
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [pageChoisie, setPageChoisie] = useState(null);
 
   if (!isOpen || !activePersona) return null;
+
+  const pages = pagesAutorisees(activePersona);
+  const pageCourante = pages.find((page) => page.id === pageChoisie) || pages[0] || null;
+  const IconePage = ICONES_PAGE[pageCourante?.id] || LayoutGrid;
 
   const defaultAvatars = [
     { url: "https://images.unsplash.com/photo-1531384441138-2736e62e0919?w=150&h=150&fit=crop&crop=faces&auto=format&q=80", label: "Cadre Homme" },
@@ -67,8 +107,8 @@ export default function UserProfileModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="w-full max-w-xl bg-white border border-slate-200 rounded-lg p-6 sm:p-7 shadow-2xl space-y-5 relative max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+      <div className="w-full max-w-6xl bg-white border border-slate-200 rounded-lg p-6 sm:p-7 shadow-2xl space-y-5 relative max-h-[90vh] overflow-y-auto">
         
         {/* Bouton Fermer */}
         <button
@@ -101,7 +141,9 @@ export default function UserProfileModal({
         )}
 
         <form onSubmit={handleSave} className="space-y-5">
-          
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+          <div className="space-y-5">
+
           {/* Section Photo de Profil */}
           <div className="bg-slate-50 p-4 rounded-md border border-slate-200 space-y-3">
             <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
@@ -196,7 +238,7 @@ export default function UserProfileModal({
                 </span>
               </div>
               <div>
-                <span className="text-slate-500 text-[11px] block">Courriel Professionnel OPN :</span>
+                <span className="text-slate-500 text-[11px] block">Email professionnel OPN :</span>
                 <span className="font-semibold text-slate-800 bg-white px-2.5 py-1 rounded border border-slate-200 inline-block mt-0.5 truncate max-w-full">
                   {activePersona.email}
                 </span>
@@ -243,6 +285,76 @@ export default function UserProfileModal({
               </div>
             </div>
 
+          </div>
+          </div>
+
+          <section className="rounded-2xl overflow-hidden border border-[#0E2A4F]/10 shadow-sm lg:sticky lg:top-0">
+            <div className="bg-[#0E2A4F] px-4 py-3 text-white flex items-end justify-between gap-3">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.22em] text-white/55">Passeport d'accès</p>
+                <p className="text-sm font-semibold mt-0.5">Pages ouvertes et actions autorisées</p>
+              </div>
+              <span className="shrink-0 text-[11px] font-semibold tracking-wide bg-white/10 border border-white/15 rounded-full px-3 py-1">
+                {pages.length} page{pages.length > 1 ? 's' : ''}
+              </span>
+            </div>
+
+            {pages.length === 0 ? (
+              <p className="px-4 py-6 text-sm text-slate-500">Aucune page n'est ouverte pour ce profil.</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] min-h-[280px]">
+                <div className="bg-[#F6F8FB] border-b sm:border-b-0 sm:border-r border-slate-200 p-2 space-y-1">
+                  {pages.map((page) => {
+                    const active = page.id === pageCourante.id;
+                    const Icone = ICONES_PAGE[page.id] || LayoutGrid;
+                    return (
+                      <button
+                        key={page.id}
+                        type="button"
+                        onClick={() => setPageChoisie(page.id)}
+                        className={`w-full text-left rounded-xl px-2.5 py-2 flex items-center gap-2.5 transition-colors ${
+                          active ? 'bg-white shadow-sm text-[#0E2A4F]' : 'text-slate-600 hover:bg-white/80'
+                        }`}
+                      >
+                        <span className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${active ? 'bg-[#0E2A4F] text-white' : 'bg-white text-[#2E68B4] border border-slate-200'}`}>
+                          <Icone className="w-4 h-4" />
+                        </span>
+                        <span className="text-xs font-semibold leading-snug">{page.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="p-4 bg-white">
+                  <div className="flex items-center gap-3">
+                    <span className="w-10 h-10 rounded-2xl bg-[#0E2A4F] text-white flex items-center justify-center shrink-0">
+                      <IconePage className="w-5 h-5" />
+                    </span>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.18em] text-slate-400">{pageCourante.badge}</p>
+                      <h4 className="text-base font-semibold text-[#0E2A4F] leading-tight">{pageCourante.label}</h4>
+                    </div>
+                  </div>
+                  <ul className="mt-3 space-y-2">
+                    {pageCourante.actions.map((action) => {
+                      const IconeAction = ICONES_ACTION[action] || CheckCircle2;
+                      return (
+                        <li key={action} className="flex items-start gap-3 rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-2.5">
+                          <span className="mt-0.5 w-7 h-7 rounded-full bg-white border border-emerald-100 text-[#00A651] flex items-center justify-center shrink-0">
+                            <IconeAction className="w-3.5 h-3.5" />
+                          </span>
+                          <span>
+                            <span className="block text-sm font-semibold text-slate-900">{action}</span>
+                            <span className="block text-[11px] leading-relaxed text-slate-500">{SENS_ACTION[action]}</span>
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              </div>
+            )}
+          </section>
           </div>
 
           {/* Boutons d'Action Modal */}

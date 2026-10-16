@@ -339,7 +339,7 @@ export default function ReferentielManager({ activePersona }) {
   }
 
   return (
-    <div className="space-y-4 max-w-6xl">
+    <div className="space-y-4 w-full">
       <div>
         <p className="text-[11px] font-bold uppercase tracking-wider text-[#2E68B4]">Données de base</p>
         <div className="flex items-center gap-2">
@@ -365,14 +365,14 @@ export default function ReferentielManager({ activePersona }) {
 
       {error && <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded px-3 py-2">{error}</p>}
 
-      <div className="bg-white border border-slate-200 rounded-md p-3 space-y-3">
+      <div className="bg-white border border-slate-200 rounded-md p-3 space-y-3 w-full">
         <div className="flex flex-wrap gap-2 items-end">
           <label className="text-xs text-slate-600 flex-1 min-w-[220px]">
             Recherche
             <input
               value={q}
               onChange={(e) => { setQ(e.target.value); setPage(1); }}
-              placeholder="Nom, code, courriel…"
+              placeholder="Nom, code, email…"
               className="mt-1 w-full border border-slate-200 rounded px-2 py-1.5 text-sm"
             />
           </label>

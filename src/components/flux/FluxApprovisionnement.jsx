@@ -51,6 +51,23 @@ function formaterMontant(valeur) {
   return `${Number(valeur || 0).toLocaleString('fr-FR')} F`;
 }
 
+/** Formate une date d'enregistrement, de transmission ou de dispersion. */
+function formaterDate(valeur) {
+  if (!valeur) return '—';
+  const date = new Date(valeur);
+  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString('fr-FR');
+}
+
+/** Une ligne du détail : libellé au-dessus de la valeur. */
+function ChampDetail({ libelle, valeur, large = false }) {
+  return (
+    <div className={large ? 'sm:col-span-2' : ''}>
+      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{libelle}</p>
+      <p className="text-sm text-slate-800 whitespace-pre-wrap">{valeur || '—'}</p>
+    </div>
+  );
+}
+
 /**
  * Liste déroulante avec recherche intégrée.
  * La barre de recherche est dans le panneau, pas au-dessus du champ.
@@ -179,7 +196,6 @@ export default function FluxApprovisionnement({ activePersona }) {
   const [stage, setStage] = useState(localStage);
   const [commandes, setCommandes] = useState([]);
   const [compteurs, setCompteurs] = useState({ total: 0, recues: 0, transmises: 0, dispersees: 0 });
-  const [maj, setMaj] = useState(null);
   const [antennes, setAntennes] = useState([]);
   const [produits, setProduits] = useState([]);
   const [error, setError] = useState('');
@@ -199,7 +215,14 @@ export default function FluxApprovisionnement({ activePersona }) {
   const [pageCourante, setPageCourante] = useState(1);
   const [aideOuverte, setAideOuverte] = useState(false);
 
-  const peutCommander = (stage === 'commande' || stage === 'antenne' || stage === 'supervision') && droit(activePersona, 'flux', 'creer');
+  const antenneDuCompte = activePersona?.antenne_id || activePersona?.province_id || activePersona?.provinceId;
+  const codeRoleCompte = activePersona?.codeRole || activePersona?.code_role;
+  const antenneImposee = Boolean(antenneDuCompte) && !['SUPER_ADMIN', 'ADMIN_METIER'].includes(codeRoleCompte);
+  const titreMenu = (codeRoleCompte === 'DEMANDEUR_PHARMACIEN' || codeRoleCompte === 'DEMANDEUR_STRUCTURE')
+    ? 'Mes demandes'
+    : 'Chaîne d\'approvisionnement';
+  const estDemandeur = stage === 'commande';
+  const peutCommander = estDemandeur || ((stage === 'antenne' || stage === 'supervision') && droit(activePersona, 'flux', 'creer'));
   const peutTransmettre = (stage === 'antenne' || stage === 'supervision') && droit(activePersona, 'flux', 'modifier');
   const peutDisperser = (stage === 'siege' || stage === 'supervision') && droit(activePersona, 'flux', 'valider');
 
@@ -217,7 +240,6 @@ export default function FluxApprovisionnement({ activePersona }) {
       setStage(flux.stage || localStage);
       setCommandes(flux.commandes || []);
       setCompteurs(flux.compteurs || { total: 0, recues: 0, transmises: 0, dispersees: 0 });
-      setMaj(new Date());
       setAntennes(ants.antennes || []);
       setProduits((meds.produits || []).slice(0, 80));
       if (silent) setError('');
@@ -237,14 +259,26 @@ export default function FluxApprovisionnement({ activePersona }) {
 
   useEffect(() => {
     if (!antennes.length || antenneId) return;
-    const own = antennes.find((a) => String(a.id) === String(activePersona?.province_id || activePersona?.provinceId));
-    setAntenneId(String((own || antennes[0]).id));
-  }, [antennes, antenneId, activePersona]);
+    const propre = antennes.find((antenne) => String(antenne.id) === String(antenneDuCompte));
+    setAntenneId(String((propre || antennes[0]).id));
+  }, [antennes, antenneId, antenneDuCompte]);
+
+  const antenneChoisie = antennes.find((antenne) => String(antenne.id) === String(antenneId));
 
   const produitChoisi = useMemo(
     () => produits.find((p) => String(p.id) === String(ligne.produit_id)),
     [produits, ligne.produit_id]
   );
+
+  /** Ouvre le formulaire. Pour un demandeur, la structure et l'antenne sont les siennes. */
+  function ouvrirDemande() {
+    const structure = activePersona?.entite || activePersona?.structure || '';
+    if (!partenaire && structure) setPartenaire(structure);
+    const propre = antennes.find((antenne) => String(antenne.id) === String(antenneDuCompte));
+    if ((estDemandeur || antenneImposee) && propre) setAntenneId(String(propre.id));
+    setError('');
+    setModalOuvert(true);
+  }
 
   function ajouterLigne() {
     if (!produitChoisi) return;
@@ -267,7 +301,7 @@ export default function FluxApprovisionnement({ activePersona }) {
       await apiRequest('/flux/commandes', {
         method: 'POST',
         body: JSON.stringify({
-          antenne_id: Number(antenneId),
+          antenne_id: Number(antenneImposee ? antenneDuCompte : antenneId),
           partenaire_nom: partenaire,
           partenaire_type: 'PHARMACIE',
           motif,
@@ -325,6 +359,8 @@ export default function FluxApprovisionnement({ activePersona }) {
         commande.antenne?.nom,
         commande.antenne?.chef_lieu,
         commande.motif,
+        commande.partenaire_type,
+        commande.note_dispersion,
         STATUTS[commande.statut],
         ...(commande.lignes || []).map((row) => row.designation),
       ].filter(Boolean).join(' ').toLowerCase();
@@ -365,69 +401,51 @@ export default function FluxApprovisionnement({ activePersona }) {
   }
 
   return (
-    <div className="space-y-5 max-w-6xl">
-      <div>
-        <p className="text-[11px] font-bold uppercase tracking-wider text-[#2E68B4]">Territoire national · 9 provinces</p>
-        <div className="flex items-center gap-2">
-          <h1 className="text-xl font-black text-slate-900">Chaîne d'approvisionnement</h1>
-          <button type="button" onClick={() => setAideOuverte(true)} className="w-6 h-6 rounded-full border border-slate-300 text-[#2E68B4] inline-flex items-center justify-center" title="Explications" aria-label="Explications">
-            <Info className="w-3.5 h-3.5" />
-          </button>
-        </div>
-        <p className="text-[11px] text-emerald-700 mt-2 flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          Suivi en direct{maj ? ` · mis à jour à ${maj.toLocaleTimeString('fr-FR')}` : ''}
-        </p>
-      </div>
+    <div className="flex-1 min-h-0 flex flex-col">
+      {error && !modalOuvert && <p className="shrink-0 mb-3 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded px-3 py-2">{error}</p>}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-        {[
-          ['Commandes', compteurs.total],
-          ['Chez l\'antenne', compteurs.recues],
-          ['Au siège', compteurs.transmises],
-          ['Dispersées', compteurs.dispersees],
-        ].map(([label, value]) => (
-          <div key={label} className="bg-white border border-slate-200 rounded-md px-3 py-2">
-            <p className="text-[10px] uppercase tracking-wide text-slate-500">{label}</p>
-            {loading ? (
-              <Loader2 className="w-5 h-5 mt-1 animate-spin text-[#2E68B4]" />
-            ) : (
-              <p className="text-lg font-black text-slate-900">{value}</p>
-            )}
-          </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        {STEPS.map((step) => (
-          <div key={step.id} className={`rounded-md border p-3 ${stage === step.id || stage === 'supervision' ? 'border-[#2E68B4] bg-blue-50' : 'border-slate-200 bg-white'}`}>
-            <p className="text-xs font-bold text-slate-900">{step.titre}</p>
-          </div>
-        ))}
-      </div>
-
-      {error && !modalOuvert && <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded px-3 py-2">{error}</p>}
-
-      <section className="bg-white border border-slate-200 rounded-md overflow-hidden">
-        <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-bold text-slate-900">Commandes</h2>
+      <section className="flex-1 min-h-0 flex flex-col bg-white border border-slate-200 rounded-md overflow-hidden">
+        <div className="shrink-0 p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h1 className="text-base font-black text-slate-900">{titreMenu}</h1>
+              <button type="button" onClick={() => setAideOuverte(true)} className="w-6 h-6 rounded-full border border-slate-300 text-[#2E68B4] inline-flex items-center justify-center" title="Explications" aria-label="Explications">
+                <Info className="w-3.5 h-3.5" />
+              </button>
+            </div>
             <p className="text-[11px] text-slate-500 mt-0.5">{commandesVisibles.length} affichée{commandesVisibles.length > 1 ? 's' : ''} sur {commandes.length}</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {[
+              ['Commandes', compteurs.total],
+              ['Chez l\'antenne', compteurs.recues],
+              ['Au siège', compteurs.transmises],
+              ['Dispersées', compteurs.dispersees],
+            ].map(([label, value]) => (
+              <div key={label} className="px-2.5 py-1 rounded border border-slate-200 bg-slate-50">
+                <p className="text-[10px] uppercase tracking-wide text-slate-500 leading-none">{label}</p>
+                {loading ? (
+                  <Loader2 className="w-3.5 h-3.5 mt-1 animate-spin text-[#2E68B4]" />
+                ) : (
+                  <p className="text-sm font-black text-slate-900 leading-tight">{value}</p>
+                )}
+              </div>
+            ))}
           </div>
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => load()} disabled={loading} className="w-8 h-8 inline-flex items-center justify-center rounded border border-slate-200 text-slate-600 hover:bg-slate-50" title="Actualiser les commandes" aria-label="Actualiser les commandes">
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             </button>
             {peutCommander && (
-              <button type="button" onClick={() => setModalOuvert(true)} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded bg-[#0E2A4F] text-white">
+              <button type="button" onClick={ouvrirDemande} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded bg-[#0E2A4F] text-white">
                 <Plus className="w-3.5 h-3.5" />
-                Nouvelle commande
+                {estDemandeur ? 'Nouvelle demande' : 'Nouvelle commande'}
               </button>
             )}
           </div>
         </div>
 
-        <div className="px-4 py-3 border-b border-slate-100 flex flex-wrap items-center gap-2">
+        <div className="shrink-0 px-4 py-3 border-b border-slate-100 flex flex-wrap items-center gap-2">
           <label className="relative flex-1 min-w-[220px]">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
             <input
@@ -451,9 +469,9 @@ export default function FluxApprovisionnement({ activePersona }) {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="flex-1 min-h-0 overflow-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
+            <thead className="sticky top-0 z-10 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-3 py-2 font-bold">N° commande</th>
                 <th className="px-3 py-2 font-bold">Demandeur</th>
@@ -470,7 +488,9 @@ export default function FluxApprovisionnement({ activePersona }) {
               {!loading && commandesVisibles.length === 0 && (
                 <tr>
                   <td colSpan={8} className="px-3 py-8 text-center text-slate-500">
-                    {commandes.length === 0 ? 'Aucune commande pour ce profil.' : 'Aucune commande ne correspond à cette recherche.'}
+                    {commandes.length === 0
+                      ? (estDemandeur ? 'Aucune demande enregistrée. Utilisez Nouvelle demande pour commander auprès de votre antenne.' : 'Aucune commande pour ce profil.')
+                      : 'Aucune commande ne correspond à cette recherche.'}
                   </td>
                 </tr>
               )}
@@ -516,31 +536,49 @@ export default function FluxApprovisionnement({ activePersona }) {
                     </tr>
                     {ouverte && (
                       <tr className="border-t border-slate-100 bg-slate-50/70">
-                        <td colSpan={8} className="px-4 py-3">
-                          <ul className="space-y-1.5 text-slate-700">
-                            {lignes.map((row) => (
-                              <li key={row.id} className="flex flex-wrap items-center justify-between gap-2">
-                                <span>{row.designation} — demandé {row.quantite_demandee}, dispersé {row.quantite_dispersee}</span>
-                                {peutDisperser && commande.statut === 'TRANSMISE_SIEGE' && (
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    max={row.quantite_demandee}
-                                    value={dispersion[row.id] ?? row.quantite_demandee}
-                                    onChange={(e) => setDispersion((s) => ({ ...s, [row.id]: e.target.value }))}
-                                    className="w-20 border border-slate-200 rounded px-2 py-1 bg-white"
-                                  />
-                                )}
-                              </li>
-                            ))}
-                          </ul>
+                        <td colSpan={8} className="px-4 py-3 space-y-4">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                            <ChampDetail libelle="N° demande" valeur={commande.numero_commande} />
+                            <ChampDetail libelle="Statut" valeur={STATUTS[commande.statut] || commande.statut} />
+                            <ChampDetail libelle="Demandeur" valeur={commande.demandeur_nom} />
+                            <ChampDetail libelle="Fonction" valeur={commande.demandeur_role} />
+                            <ChampDetail libelle="Structure" valeur={commande.partenaire_nom} />
+                            <ChampDetail libelle="Type de structure" valeur={commande.partenaire_type} />
+                            <ChampDetail libelle="Antenne" valeur={[commande.antenne?.nom, commande.antenne?.chef_lieu].filter(Boolean).join(' — ')} />
+                            <ChampDetail libelle="Montant" valeur={formaterMontant(commande.montant_total_xaf)} />
+                            <ChampDetail libelle="Motif" valeur={commande.motif} large />
+                            <ChampDetail libelle="Enregistrée le" valeur={formaterDate(commande.created_at)} />
+                            <ChampDetail libelle="Transmise le" valeur={commande.transmise_at ? `${formaterDate(commande.transmise_at)}${commande.transmise_par_nom ? ` par ${commande.transmise_par_nom}` : ''}` : ''} />
+                            <ChampDetail libelle="Dispersée le" valeur={commande.dispersee_at ? `${formaterDate(commande.dispersee_at)}${commande.dispersee_par_nom ? ` par ${commande.dispersee_par_nom}` : ''}` : ''} />
+                            <ChampDetail libelle="Note de dispersion" valeur={commande.note_dispersion} large />
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-1">Médicaments</p>
+                            <ul className="space-y-1.5 text-slate-700">
+                              {lignes.map((row) => (
+                                <li key={row.id} className="flex flex-wrap items-center justify-between gap-2">
+                                  <span>{row.designation} — demandé {row.quantite_demandee}, dispersé {row.quantite_dispersee}, prix {formaterMontant(row.prix_unitaire_xaf)}</span>
+                                  {peutDisperser && commande.statut === 'TRANSMISE_SIEGE' && (
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max={row.quantite_demandee}
+                                      value={dispersion[row.id] ?? row.quantite_demandee}
+                                      onChange={(e) => setDispersion((s) => ({ ...s, [row.id]: e.target.value }))}
+                                      className="w-20 border border-slate-200 rounded px-2 py-1 bg-white"
+                                    />
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
                           {commande.journal?.length > 0 && (
-                            <ol className="mt-3 border-l border-slate-200 pl-3 space-y-1.5">
+                            <ol className="border-l border-slate-200 pl-3 space-y-1.5">
                               {commande.journal.map((evt) => (
                                 <li key={evt.id} className="text-[11px] text-slate-600">
                                   <span className="font-semibold text-slate-800">{ACTIONS[evt.action] || evt.action}</span>
                                   {' '}par {evt.auteur_nom}
-                                  {evt.created_at ? ` · ${new Date(evt.created_at).toLocaleString('fr-FR')}` : ''}
+                                  {evt.created_at ? ` · ${formaterDate(evt.created_at)}` : ''}
                                   {evt.detail ? ` — ${evt.detail}` : ''}
                                 </li>
                               ))}
@@ -556,7 +594,7 @@ export default function FluxApprovisionnement({ activePersona }) {
           </table>
         </div>
 
-        <div className="px-4 py-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+        <div className="shrink-0 px-4 py-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
           <label className="flex items-center gap-2">
             Afficher
             <select value={taillePage} onChange={(evenement) => setTaillePage(Number(evenement.target.value))} className="border border-slate-200 rounded px-2 py-1">
@@ -598,7 +636,7 @@ export default function FluxApprovisionnement({ activePersona }) {
         <div className="fixed inset-0 z-[80] bg-slate-900/50 flex items-center justify-center p-4" onMouseDown={() => setModalOuvert(false)}>
           <form onSubmit={envoyerCommande} onMouseDown={(e) => e.stopPropagation()} className="w-full max-w-2xl bg-white border border-slate-200 rounded-md p-4 space-y-3 max-h-[90vh] overflow-y-auto shadow-xl">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="text-sm font-bold text-slate-900">Nouvelle commande</h2>
+              <h2 className="text-sm font-bold text-slate-900">{estDemandeur ? 'Nouvelle demande' : 'Nouvelle commande'}</h2>
               <button type="button" onClick={() => setModalOuvert(false)} className="p-1 rounded text-slate-500 hover:bg-slate-100" aria-label="Fermer">
                 <X className="w-4 h-4" />
               </button>
@@ -610,17 +648,21 @@ export default function FluxApprovisionnement({ activePersona }) {
                 <input value={activePersona?.nom || activePersona?.name || ''} readOnly className="mt-1 w-full border border-slate-200 rounded px-2 py-1.5 text-sm bg-slate-50" />
               </label>
               <label className="text-xs text-slate-600">
-                Pharmacie ou partenaire
-                <input value={partenaire} onChange={(e) => setPartenaire(e.target.value)} className="mt-1 w-full border border-slate-200 rounded px-2 py-1.5 text-sm" required placeholder="Nom de la pharmacie" />
+                {estDemandeur ? 'Structure' : 'Pharmacie ou partenaire'}
+                <input value={partenaire} onChange={(e) => setPartenaire(e.target.value)} readOnly={estDemandeur} className={`mt-1 w-full border border-slate-200 rounded px-2 py-1.5 text-sm ${estDemandeur ? 'bg-slate-50' : ''}`} required placeholder="Nom de la pharmacie" />
               </label>
               <label className="text-xs text-slate-600 md:col-span-2">
                 Antenne destinataire
-                <ListeDeroulante
-                  valeur={antenneId}
-                  surChangement={setAntenneId}
-                  texteVide="Choisir une antenne"
-                  options={antennes.map((a) => ({ value: a.id, label: `${a.nom} — ${a.chef_lieu}` }))}
-                />
+                {(estDemandeur || antenneImposee) ? (
+                  <input value={antenneChoisie ? `${antenneChoisie.nom} — ${antenneChoisie.chef_lieu}` : ''} readOnly className="mt-1 w-full border border-slate-200 rounded px-2 py-1.5 text-sm bg-slate-50" />
+                ) : (
+                  <ListeDeroulante
+                    valeur={antenneId}
+                    surChangement={setAntenneId}
+                    texteVide="Choisir une antenne"
+                    options={antennes.map((a) => ({ value: a.id, label: `${a.nom} — ${a.chef_lieu}` }))}
+                  />
+                )}
               </label>
             </div>
             <label className="text-xs text-slate-600 block">

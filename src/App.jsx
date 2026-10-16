@@ -908,7 +908,12 @@ export default function App() {
           sidebarHidden={sidebarMode === 'hidden'}
           onShowSidebar={() => setSidebarMode('expanded')}
         />
-        <main className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6">
+        <main className={`flex-1 min-h-0 flex flex-col ${currentView === 'flux_appro' ? 'overflow-hidden p-4 sm:p-6' : 'overflow-y-auto p-4 sm:p-6'}`}>
+          {getVisibleModules(sessionPersona || currentUser).some((item) => item.id === currentView && item.enCours) && (
+            <div className="mb-4 inline-flex items-center rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-900">
+              En cours de développement
+            </div>
+          )}
           {currentView === 'flux_appro' && (
             <FluxApprovisionnement activePersona={sessionPersona} />
           )}

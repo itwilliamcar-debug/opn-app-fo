@@ -28,6 +28,77 @@ function estAcces(code) {
   return String(code || '').startsWith('ACCESS_');
 }
 
+/**
+ * Liste déroulante avec la recherche dans le panneau.
+ * Le panneau est affiché au-dessus du formulaire pour ne pas être coupé.
+ */
+function ListeChoix({ valeur, surChangement, options, texteVide }) {
+  const [ouvert, setOuvert] = useState(false);
+  const [recherche, setRecherche] = useState('');
+  const [position, setPosition] = useState(null);
+  const boutonRef = React.useRef(null);
+  const panneauRef = React.useRef(null);
+  const choisi = options.find((option) => String(option.value) === String(valeur));
+  const filtre = recherche.trim().toLowerCase();
+  const visibles = options.filter((option) => option.label.toLowerCase().includes(filtre));
+
+  useEffect(() => {
+    if (!ouvert) return undefined;
+    const placer = () => {
+      const cadre = boutonRef.current?.getBoundingClientRect();
+      if (!cadre) return;
+      const hauteur = 280;
+      const bas = window.innerHeight - cadre.bottom;
+      const ouvrirVersLeHaut = bas < hauteur && cadre.top > bas;
+      setPosition({
+        left: cadre.left,
+        width: cadre.width,
+        top: ouvrirVersLeHaut ? Math.max(8, cadre.top - hauteur - 4) : cadre.bottom + 4,
+        maxHeight: hauteur,
+      });
+    };
+    placer();
+    const fermer = (evenement) => {
+      if (boutonRef.current?.contains(evenement.target) || panneauRef.current?.contains(evenement.target)) return;
+      setOuvert(false);
+    };
+    window.addEventListener('resize', placer);
+    window.addEventListener('scroll', placer, true);
+    document.addEventListener('mousedown', fermer);
+    return () => {
+      window.removeEventListener('resize', placer);
+      window.removeEventListener('scroll', placer, true);
+      document.removeEventListener('mousedown', fermer);
+    };
+  }, [ouvert]);
+
+  return (
+    <div>
+      <button type="button" ref={boutonRef} onClick={() => { setRecherche(''); setOuvert((etat) => !etat); }} className="mt-1 w-full border border-slate-200 rounded px-2 py-1.5 text-sm bg-white text-left">
+        {choisi ? choisi.label : texteVide}
+      </button>
+      {ouvert && position && createPortal(
+        <div ref={panneauRef} className="fixed z-[200] bg-white border border-slate-200 rounded shadow-xl overflow-hidden" style={{ top: position.top, left: position.left, width: position.width, maxHeight: position.maxHeight }}>
+          <div className="p-2 border-b border-slate-100">
+            <input autoFocus value={recherche} onChange={(evenement) => setRecherche(evenement.target.value)} placeholder="Rechercher…" className="w-full border border-slate-200 rounded px-2 py-1.5 text-sm" />
+          </div>
+          <ul className="overflow-y-auto py-1" style={{ maxHeight: position.maxHeight - 52 }}>
+            {visibles.length === 0 && <li className="px-2 py-1.5 text-xs text-slate-500">Aucun résultat</li>}
+            {visibles.map((option) => (
+              <li key={String(option.value)}>
+                <button type="button" onClick={() => { surChangement(String(option.value)); setOuvert(false); }} className="w-full text-left px-2 py-1.5 text-sm hover:bg-blue-50">
+                  {option.label}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
 export default function ParametrageSecurite({ utilisateur }) {
   const peutCreerUtilisateur = droit(utilisateur, 'utilisateurs', 'creer');
   const peutModifierUtilisateur = droit(utilisateur, 'utilisateurs', 'modifier');
@@ -48,6 +119,8 @@ export default function ParametrageSecurite({ utilisateur }) {
   const [filtreEtat, setFiltreEtat] = useState('tous');
   const [filtrePoste, setFiltrePoste] = useState('tous');
   const [pageUtilisateur, setPageUtilisateur] = useState(1);
+  /** Provinces, antennes et directions proposées dans la fiche utilisateur. */
+  const [territoire, setTerritoire] = useState({ provinces: [], antennes: [], directions: [] });
   const [tailleUtilisateur, setTailleUtilisateur] = useState(10);
   const [message, setMessage] = useState('');
   const [erreur, setErreur] = useState('');
@@ -57,19 +130,39 @@ export default function ParametrageSecurite({ utilisateur }) {
   const [matricePleine, setMatricePleine] = useState(false);
   const [fiche, setFiche] = useState(null);
 
+  /** Toutes les antennes du référentiel. La province choisie les place en tête, sans les masquer. */
+  function antennesProposees(provinceId) {
+    const libelle = (antenne) => {
+      const lieu = antenne.ville_antenne || antenne.chef_lieu || '';
+      return [antenne.code_antenne, antenne.nom, lieu].filter(Boolean).join(' — ');
+    };
+    const triees = [...territoire.antennes].sort((a, b) => {
+      const aProvince = provinceId && String(a.province_id) === String(provinceId) ? 0 : 1;
+      const bProvince = provinceId && String(b.province_id) === String(provinceId) ? 0 : 1;
+      return aProvince - bProvince || String(a.nom).localeCompare(String(b.nom), 'fr');
+    });
+    return triees.map((antenne) => ({ value: antenne.id, label: libelle(antenne) }));
+  }
+
   async function charger() {
     setChargement(true);
     setErreur('');
     try {
-    const [u, p, h, l] = await Promise.all([
+    const [u, p, h, l, territoireReponse] = await Promise.all([
       apiRequest('/parametrage/utilisateurs'),
       apiRequest('/parametrage/profils'),
       apiRequest('/parametrage/habilitations'),
       apiRequest('/parametrage/habilitations-profils'),
+      apiRequest('/parametrage/territoire'),
     ]);
     setUtilisateurs(u.utilisateurs || []);
     setProfils(p.profils || []);
     setHabilitations(h.habilitations || []);
+    setTerritoire({
+      provinces: territoireReponse.provinces || [],
+      antennes: territoireReponse.antennes || [],
+      directions: territoireReponse.directions || [],
+    });
     const carte = {};
     (p.profils || []).forEach((profil) => {
       carte[profil.id] = {};
@@ -171,12 +264,19 @@ export default function ParametrageSecurite({ utilisateur }) {
     setMessage('');
     try {
       if (fiche.type === 'utilisateur') {
+        if (!fiche.province_rattachement_id || !fiche.antenne_id) {
+          setErreur('Choisissez la province et l\'antenne.');
+          return;
+        }
         const body = {
           email: fiche.email,
           name: fiche.name,
           profil_id: Number(fiche.profil_id),
           poste_comptable: fiche.poste_comptable || null,
           etat: fiche.etat || 'actif',
+          province_rattachement_id: Number(fiche.province_rattachement_id),
+          antenne_id: Number(fiche.antenne_id),
+          direction_id: fiche.direction_id ? Number(fiche.direction_id) : null,
         };
         if (fiche.password) body.password = fiche.password;
         if (fiche.id) {
@@ -250,11 +350,13 @@ export default function ParametrageSecurite({ utilisateur }) {
       if (filtreProfilListe === 'sans' && item.profil_id) return false;
       if (filtreProfilListe !== 'tous' && filtreProfilListe !== 'sans' && String(item.profil_id) !== String(filtreProfilListe)) return false;
       if (filtreEtat !== 'tous' && item.etat !== filtreEtat) return false;
-      const aPoste = Boolean(item.poste_comptable);
-      if (filtrePoste === 'renseigne' && !aPoste) return false;
-      if (filtrePoste === 'vide' && aPoste) return false;
+      const aDirection = Boolean(item.direction);
+      const aAntenne = Boolean(item.antenne);
+      if (filtrePoste === 'direction' && !aDirection) return false;
+      if (filtrePoste === 'antenne' && !aAntenne) return false;
+      if (filtrePoste === 'sans' && (aDirection || aAntenne)) return false;
       if (!terme) return true;
-      return `${item.email} ${item.name} ${item.profil || ''} ${item.poste_comptable || ''}`.toLowerCase().includes(terme);
+      return `${item.email} ${item.name} ${item.profil || ''} ${item.poste_comptable || ''} ${item.province || ''} ${item.antenne || ''} ${item.direction || ''}`.toLowerCase().includes(terme);
     });
   }, [utilisateurs, rechercheUtilisateur, filtreProfilListe, filtreEtat, filtrePoste]);
   const pagesUtilisateur = Math.max(1, Math.ceil(utilisateursListe.length / tailleUtilisateur));
@@ -347,7 +449,7 @@ export default function ParametrageSecurite({ utilisateur }) {
   return (
     <section className="space-y-4">
       <header>
-        <h1 className="text-xl font-semibold text-[#0E2A4F]">Paramétrage & administration</h1>
+        <h1 className="text-xl font-semibold text-[#0E2A4F]">Droits d'accès</h1>
         <p className="text-sm text-slate-600">Un utilisateur a un seul profil. Le profil porte les habilitations.</p>
         <p className="text-xs text-slate-500">Droits paramétrage : {libelleDroits(utilisateur, 'parametrage')}. Droits utilisateurs : {libelleDroits(utilisateur, 'utilisateurs')}.</p>
       </header>
@@ -364,7 +466,7 @@ export default function ParametrageSecurite({ utilisateur }) {
           <div className="flex flex-wrap items-end gap-2">
             <label className="text-xs text-slate-600 flex-1 min-w-[220px]">
               Recherche
-              <input value={rechercheUtilisateur} onChange={(event) => { setRechercheUtilisateur(event.target.value); setPageUtilisateur(1); }} placeholder="Mail, nom, profil, poste…" className="mt-1 w-full border border-slate-200 rounded px-2 py-1.5 text-sm" />
+              <input value={rechercheUtilisateur} onChange={(event) => { setRechercheUtilisateur(event.target.value); setPageUtilisateur(1); }} placeholder="Email, nom, profil, antenne, direction…" className="mt-1 w-full border border-slate-200 rounded px-2 py-1.5 text-sm" />
             </label>
             <label className="text-xs text-slate-600">
               Profil
@@ -383,28 +485,31 @@ export default function ParametrageSecurite({ utilisateur }) {
               </select>
             </label>
             <label className="text-xs text-slate-600">
-              Poste
+              Rattachement
               <select value={filtrePoste} onChange={(event) => { setFiltrePoste(event.target.value); setPageUtilisateur(1); }} className="mt-1 block border border-slate-200 rounded px-2 py-1.5 text-sm">
                 <option value="tous">Tous</option>
-                <option value="renseigne">Renseigné</option>
-                <option value="vide">Non renseigné</option>
+                <option value="antenne">Antenne</option>
+                <option value="direction">Direction</option>
+                <option value="sans">Sans rattachement</option>
               </select>
             </label>
-            {peutCreerUtilisateur && <button type="button" onClick={() => setFiche({ type: 'utilisateur', email: '', name: '', profil_id: profils[0]?.id || '', poste_comptable: '', etat: 'actif', password: '' })} className="px-3 py-1.5 text-xs font-bold rounded bg-[#00A651] text-white">+ Utilisateur</button>}
+            {peutCreerUtilisateur && <button type="button" onClick={() => setFiche({ type: 'utilisateur', email: '', name: '', profil_id: profils[0]?.id || '', poste_comptable: '', etat: 'actif', password: '', province_rattachement_id: '', antenne_id: '', direction_id: '' })} className="px-3 py-1.5 text-xs font-bold rounded bg-[#00A651] text-white">+ Utilisateur</button>}
           </div>
           <table className="w-full text-xs">
-            <thead><tr className="text-left text-slate-500 border-b"><th className="py-2">Mail</th><th>Nom</th><th>Profil</th><th>Poste</th><th>État</th><th></th></tr></thead>
+            <thead><tr className="text-left text-slate-500 border-b"><th className="py-2">Email</th><th>Nom</th><th>Profil</th><th>Province</th><th>Antenne</th><th>Direction</th><th>État</th><th></th></tr></thead>
             <tbody>
-              {chargement && <LigneChargementTableau colonnes={6} libelle="Chargement des utilisateurs…" />}
+              {chargement && <LigneChargementTableau colonnes={8} libelle="Chargement des utilisateurs…" />}
               {!chargement && utilisateursPage.length === 0 && (
-                <tr><td colSpan={6} className="py-6 text-center text-slate-500">Aucun utilisateur.</td></tr>
+                <tr><td colSpan={8} className="py-6 text-center text-slate-500">Aucun utilisateur.</td></tr>
               )}
               {!chargement && utilisateursPage.map((item) => (
                 <tr key={item.id} className="border-b border-slate-100">
                   <td className="py-2 pr-2">{item.email}</td>
                   <td className="pr-2">{item.name}</td>
                   <td className="pr-2">{item.profil || '—'}</td>
-                  <td className="pr-2">{item.poste_comptable || '—'}</td>
+                  <td className="pr-2">{item.province || '—'}</td>
+                  <td className="pr-2">{item.antenne || '—'}</td>
+                  <td className="pr-2">{item.direction || '—'}</td>
                   <td className="pr-2">{item.etat}</td>
                   <td className="whitespace-nowrap">
                     {peutModifierUtilisateur && <BoutonModifier onClick={() => setFiche({ type: 'utilisateur', ...item, password: '' })} />}
@@ -531,13 +636,52 @@ export default function ParametrageSecurite({ utilisateur }) {
             </h2>
             {fiche.type === 'utilisateur' && (
               <>
-                <input required type="email" value={fiche.email} onChange={(event) => setFiche({ ...fiche, email: event.target.value })} placeholder="Courriel" className="w-full border rounded px-2 py-1.5 text-sm" />
+                <input required type="email" value={fiche.email} onChange={(event) => setFiche({ ...fiche, email: event.target.value })} placeholder="Email" className="w-full border rounded px-2 py-1.5 text-sm" />
                 <input required value={fiche.name} onChange={(event) => setFiche({ ...fiche, name: event.target.value })} placeholder="Nom" className="w-full border rounded px-2 py-1.5 text-sm" />
                 <select required value={fiche.profil_id || ''} onChange={(event) => setFiche({ ...fiche, profil_id: event.target.value })} className="w-full border rounded px-2 py-1.5 text-sm">
                   <option value="">Profil</option>
                   {profils.map((profil) => <option key={profil.id} value={profil.id}>{profil.libelle}</option>)}
                 </select>
-                <input value={fiche.poste_comptable || ''} onChange={(event) => setFiche({ ...fiche, poste_comptable: event.target.value })} placeholder="Poste comptable" className="w-full border rounded px-2 py-1.5 text-sm" />
+                <label className="block text-xs text-slate-600">
+                  Province
+                  <ListeChoix
+                    valeur={fiche.province_rattachement_id || ''}
+                    surChangement={(provinceId) => setFiche({ ...fiche, province_rattachement_id: provinceId, antenne_id: '' })}
+                    texteVide="Choisir une province"
+                    options={territoire.provinces.map((province) => ({ value: province.id, label: province.nom }))}
+                  />
+                </label>
+                <label className="block text-xs text-slate-600">
+                  Antenne
+                  <ListeChoix
+                    valeur={fiche.antenne_id || ''}
+                    surChangement={(antenneId) => {
+                      const antenne = territoire.antennes.find((item) => String(item.id) === String(antenneId));
+                      setFiche({
+                        ...fiche,
+                        antenne_id: antenneId,
+                        province_rattachement_id: antenne?.province_id || fiche.province_rattachement_id,
+                        direction_id: '',
+                      });
+                    }}
+                    texteVide="Choisir une antenne"
+                    options={antennesProposees(fiche.province_rattachement_id)}
+                  />
+                </label>
+                <label className="block text-xs text-slate-600">
+                  Direction (optionnelle)
+                  <ListeChoix
+                    valeur={fiche.direction_id || ''}
+                    surChangement={(directionId) => setFiche({ ...fiche, direction_id: directionId })}
+                    texteVide="Aucune direction"
+                    options={[
+                      { value: '', label: 'Aucune direction' },
+                      ...territoire.directions
+                        .filter((direction) => !direction.antenne_id || String(direction.antenne_id) === String(fiche.antenne_id))
+                        .map((direction) => ({ value: direction.id, label: direction.nom })),
+                    ]}
+                  />
+                </label>
                 <select value={fiche.etat || 'actif'} onChange={(event) => setFiche({ ...fiche, etat: event.target.value })} className="w-full border rounded px-2 py-1.5 text-sm">
                   <option value="actif">Actif</option>
                   <option value="inactif">Inactif</option>

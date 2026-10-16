@@ -631,6 +631,14 @@ export function getFluxStage(codeRole) {
   return 'suivi';
 }
 
+/** Écrans déjà utilisables. Les autres restent visibles, avec l'étiquette de développement. */
+const MODULES_PRETS = new Set(['flux_appro', 'referentiel', 'patrimoine', 'centre_services', 'parametrage']);
+
+function avecEtiquette(item) {
+  if (!item?.id || MODULES_PRETS.has(item.id)) return item;
+  return { ...item, enCours: true };
+}
+
 export function getRoleModules(codeRole) {
   const workflow = [MODULE_FLUX, MODULE_REFERENTIEL];
   if (ROLES_PATRIMOINE.includes(codeRole)) {
@@ -641,19 +649,23 @@ export function getRoleModules(codeRole) {
     return [MODULE_FLUX, MODULE_REFERENTIEL, MODULE_PATRIMOINE, MODULE_SERVICES, MODULE_PARAMETRAGE];
   }
   if (codeRole === 'SUPER_ADMIN') {
-    return MODULES_DROITS.map((item) => ({
+    return MODULES_DROITS.map((item) => avecEtiquette({
       id: item.id,
       label: item.label,
       badge: item.badge,
       badgeColor: item.badgeColor,
     }));
   }
-  return workflow;
+  const deja = new Set(workflow.map((item) => item.id));
+  const metier = (ROLE_MODULES[codeRole] || [])
+    .filter((item) => item?.id && !deja.has(item.id))
+    .map(avecEtiquette);
+  return [...workflow, ...metier];
 }
 
 const MODULE_PARAMETRAGE = {
   id: 'parametrage',
-  label: 'Paramétrage & administration',
+  label: 'Droits d\'accès',
   badge: 'Droits',
   badgeColor: 'bg-emerald-100 text-emerald-800',
 };
@@ -696,14 +708,27 @@ export const MODULES_DROITS = [
 ].filter((item) => item.id);
 
 export function getVisibleModules(user) {
+  const codeRole = getCodeRole(user);
+  const base = getRoleModules(codeRole);
   const rows = Array.isArray(user?.habilitations) ? user.habilitations : [];
   const codes = new Set(
     rows
       .filter((row) => String(row.code || '').startsWith('ACCESS_') && (row.acces || row.lire || row.creer || row.modifier || row.valider))
       .map((row) => row.code)
   );
-  if (!codes.size) return getRoleModules(getCodeRole(user));
-  return MODULES_DROITS.filter((item) => codes.has(item.access));
+  if (!codes.size) return base;
+  const accesParModule = new Map(MODULES_DROITS.map((item) => [item.id, item.access]));
+  /** Une page du rôle ne reste visible que si son accès est encore coché dans la matrice. */
+  const baseFiltree = base.filter((item) => {
+    const codeAcces = accesParModule.get(item.id);
+    return !codeAcces || codes.has(codeAcces);
+  });
+  const deja = new Set(baseFiltree.map((item) => item.id));
+  const ajouts = MODULES_DROITS
+    .filter((item) => codes.has(item.access) && !deja.has(item.id))
+    .filter((item) => item.id !== 'patrimoine' || ROLES_PATRIMOINE.includes(codeRole))
+    .map(avecEtiquette);
+  return [...baseFiltree, ...ajouts];
 }
 
 export function droit(user, code, action = 'lire') {
@@ -718,6 +743,56 @@ export function droit(user, code, action = 'lire') {
 export function droitModule(user, moduleId, action = 'lire') {
   const module = MODULES_DROITS.find((item) => item.id === moduleId);
   return droit(user, module?.gestion || moduleId, action);
+}
+
+const ACTIONS_PAGE = [
+  ['lire', 'Consulter'],
+  ['creer', 'Créer'],
+  ['modifier', 'Modifier'],
+  ['valider', 'Valider'],
+];
+
+function habilitationActive(ligne) {
+  return Boolean(ligne && (ligne.acces || ligne.lire || ligne.creer || ligne.modifier || ligne.valider));
+}
+
+function libellePage(module, acces) {
+  const brut = String(acces?.libelle || module.label || 'Page').replace(/^accès\s+/i, '');
+  return brut.charAt(0).toUpperCase() + brut.slice(1);
+}
+
+/**
+ * Pages ouvertes par les habilitations du compte, avec les actions autorisées sur chacune.
+ */
+export function pagesAutorisees(user) {
+  const lignes = Array.isArray(user?.habilitations) ? user.habilitations : [];
+  if (!lignes.length) {
+    return getVisibleModules(user).map((module) => ({
+      id: module.id,
+      label: module.label,
+      badge: module.badge,
+      actions: ['Consulter'],
+    }));
+  }
+
+  const parCode = new Map(lignes.map((ligne) => [ligne.code, ligne]));
+  return MODULES_DROITS.flatMap((module) => {
+    const acces = parCode.get(module.access);
+    const gestion = parCode.get(module.gestion);
+    if (!habilitationActive(acces) && !habilitationActive(gestion)) return [];
+    const actions = ACTIONS_PAGE
+      .filter(([cle]) => {
+        if (cle === 'lire') return habilitationActive(acces) || Boolean(gestion?.lire);
+        return Boolean(gestion?.[cle] || acces?.[cle]);
+      })
+      .map(([, libelle]) => libelle);
+    return [{
+      id: module.id,
+      label: libellePage(module, acces),
+      badge: module.badge,
+      actions: actions.length ? actions : ['Consulter'],
+    }];
+  });
 }
 
 export function libelleDroits(user, code) {

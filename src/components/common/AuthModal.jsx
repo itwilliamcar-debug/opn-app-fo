@@ -255,7 +255,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
             </span>
 
             <div>
-              <label className="block font-bold text-slate-800 mb-1">Identifiant ou Courriel Professionnel</label>
+              <label className="block font-bold text-slate-800 mb-1">Identifiant ou email professionnel</label>
               <div className="relative">
                 <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input

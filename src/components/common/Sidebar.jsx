@@ -86,6 +86,9 @@ export default function Sidebar({
   const codeRole = getCodeRole(user);
   const menuItems = getVisibleModules(user).map((item) => ({
     ...item,
+    label: (codeRole === 'DEMANDEUR_PHARMACIEN' || codeRole === 'DEMANDEUR_STRUCTURE') && item.id === 'flux_appro'
+      ? 'Mes demandes'
+      : item.label,
     icon: codeRole === 'CONVOYEUR' && item.id === 'workspace'
       ? QrCode
       : codeRole === 'ACHATS' && item.id === 'workspace'
@@ -169,7 +172,7 @@ export default function Sidebar({
               <button
                 key={`${item.id}-${item.label}`}
                 onClick={() => setCurrentView(item.id)}
-                title={item.label}
+                title={item.enCours ? `${item.label} — En cours de développement` : item.label}
                 className={`w-full flex items-center ${collapsed ? 'justify-center px-2' : 'justify-between px-3'} py-2 rounded-md text-xs font-semibold transition-all ${
                   isActive
                     ? 'bg-[#2E68B4] text-white shadow-sm font-bold'
@@ -178,9 +181,18 @@ export default function Sidebar({
               >
                 <div className={`flex items-center min-w-0 ${collapsed ? '' : 'gap-2.5'}`}>
                   <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-blue-200'}`} />
-                  {!collapsed && <span className="truncate text-left">{item.label}</span>}
+                  {!collapsed && (
+                    <span className="min-w-0 text-left">
+                      <span className="block truncate">{item.label}</span>
+                      {item.enCours && (
+                        <span className={`block text-[9px] font-bold leading-tight mt-0.5 ${isActive ? 'text-amber-100' : 'text-amber-200'}`}>
+                          En cours de développement
+                        </span>
+                      )}
+                    </span>
+                  )}
                 </div>
-                {!collapsed && item.badge && (
+                {!collapsed && item.badge && !item.enCours && (
                   <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold border shrink-0 ml-1 ${isActive ? 'bg-white/20 text-white border-white/30' : item.badgeColor}`}>
                     {item.badge}
                   </span>

@@ -373,7 +373,7 @@ export default function AdminAudit({
         `<strong>Rôle Métier RBAC :</strong> ${createdUser.role} (${createdUser.codeRole})`,
         `<strong>Périmètre :</strong> ${createdUser.scope} — Zone ${createdUser.provinceId}`,
         `<strong>Entité d'affectation :</strong> ${createdUser.entite}`,
-        `<strong>Adresse Courriel :</strong> ${createdUser.email}`,
+        `<strong>Email :</strong> ${createdUser.email}`,
         `<strong>Téléphone :</strong> ${createdUser.telephone}`,
         `<strong>Mot de passe initial (session locale) :</strong> ${newUserInitialPassword}`,
         `<strong>Statut du Compte :</strong> ${createdUser.statut}`,
@@ -768,7 +768,7 @@ export default function AdminAudit({
                   <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type="text"
-                    placeholder="Rechercher par nom, matricule, courriel, rôle ou entité..."
+                    placeholder="Rechercher par nom, matricule, email, rôle ou entité..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-xs text-slate-900 focus:outline-none focus:border-[#2E68B4]"
@@ -1033,7 +1033,7 @@ export default function AdminAudit({
                       <th className="p-3.5">Agent / Matricule</th>
                       <th className="p-3.5">Rôle Métier & Scope</th>
                       <th className="p-3.5">Entité & Province</th>
-                      <th className="p-3.5">Courriel / Téléphone</th>
+                      <th className="p-3.5">Email / Téléphone</th>
                       <th className="p-3.5">Statut</th>
                       <th className="p-3.5 text-right">Actions</th>
                     </tr>
@@ -1481,7 +1481,7 @@ export default function AdminAudit({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Adresse Courriel Professionnelle</label>
+                  <label className="block font-bold text-slate-700 mb-1">Email professionnel</label>
                   <input
                     type="email"
                     placeholder="m.ondo@opn.ga"
@@ -1702,7 +1702,7 @@ export default function AdminAudit({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Adresse Courriel</label>
+                  <label className="block font-bold text-slate-700 mb-1">Email</label>
                   <input
                     type="email"
                     value={editFormData.email}
