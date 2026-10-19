@@ -11,7 +11,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { loginUser, verify2FA } from '../../services/api';
-import { ensureSanctumSessionForPersona, isRealSanctumToken } from '../../services/sanctumSession';
+import { ensureSanctumSessionForPersona, getDemoPasswordForEmail, isRealSanctumToken } from '../../services/sanctumSession';
 import { PROFILS_DEFAUT, USERS_PERSONAS, grouperProfilsDefaut } from '../../data/usersPersonas';
 
 export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPersona }) {
@@ -22,6 +22,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
   const [otpHint, setOtpHint] = useState('');
   const [formLoading, setFormLoading] = useState(false);
   const [connectingPersonaId, setConnectingPersonaId] = useState(null);
+  const [formKey, setFormKey] = useState(0);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const connectSeqRef = useRef(0);
@@ -169,8 +170,17 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
     }
   };
 
+  const remplirFormulaire = (persona) => {
+    if (!persona?.email) return;
+    setEmail(persona.email);
+    const motDePasse = getDemoPasswordForEmail(persona.email);
+    if (motDePasse) setPassword(motDePasse);
+    setFormKey((n) => n + 1);
+  };
+
   const handleInstantPersonaLogin = async (persona) => {
     const seq = ++connectSeqRef.current;
+    remplirFormulaire(persona);
     setConnectingPersonaId(persona.id);
     setErrorMessage('');
     setSuccessMessage(`Connexion — ${persona.nom}`);
@@ -339,11 +349,13 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
               <div className="relative">
                 <Mail className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
+                  key={`email-${formKey}`}
                   type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="nom@opn.ga"
+                  autoComplete="username"
                   className="w-full pl-8 pr-2 py-1.5 text-[11px] border border-slate-300 rounded-md text-slate-900 bg-white focus:outline-none focus:border-[#2E68B4]"
                 />
               </div>
@@ -354,10 +366,12 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
               <div className="relative">
                 <KeyRound className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
+                  key={`password-${formKey}`}
                   type="password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
                   className="w-full pl-8 pr-2 py-1.5 text-[11px] border border-slate-300 rounded-md text-slate-900 bg-white focus:outline-none focus:border-[#2E68B4]"
                 />
               </div>
