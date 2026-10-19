@@ -74,7 +74,7 @@ export default function DafReportsPanel({ activePersona, sanctumReady = false })
       }
     } catch (err) {
       setOrders([]);
-      setError(err?.message || 'API Laravel injoignable.');
+      setError(err?.backendUnavailable ? null : (err?.message || 'Impossible de charger les engagements.'));
     } finally {
       setLoading(false);
     }

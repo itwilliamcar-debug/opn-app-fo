@@ -95,7 +95,7 @@ export default function ApproGovernancePanel({
       setQueue(today.queue || null);
       setCollaborators(collabs.collaborateurs || []);
     } catch (err) {
-      onFlash?.(err.message || 'Erreur chargement gouvernance');
+      if (!err?.backendUnavailable) onFlash?.(err.message || 'Erreur chargement gouvernance');
     } finally {
       setLoading(false);
     }
@@ -112,7 +112,7 @@ export default function ApproGovernancePanel({
       onFlash?.('Opération gouvernance enregistrée');
       await load();
     } catch (err) {
-      onFlash?.(err.message || 'Échec opération gouvernance');
+      if (!err?.backendUnavailable) onFlash?.(err.message || 'Échec opération gouvernance');
     } finally {
       setBusy(null);
     }

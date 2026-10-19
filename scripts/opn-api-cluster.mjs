@@ -8,7 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const BACKEND = path.resolve(__dirname, '..', 'opn-backend');
+const BACKEND = path.resolve(__dirname, '..', '..', 'Backend');
 const WORKERS = Number(process.env.OPN_API_WORKERS || 5);
 const BASE_PORT = Number(process.env.OPN_API_BASE_PORT || 8011);
 const PUBLIC_PORT = Number(process.env.OPN_API_PORT || 8002);

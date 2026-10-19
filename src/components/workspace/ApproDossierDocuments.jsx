@@ -34,7 +34,7 @@ export default function ApproDossierDocuments({ demandeId, canManage = false, on
       const res = await fetchApproDocuments({ demande_id: demandeId });
       setDocs(res.documents || []);
     } catch (err) {
-      onFlash?.(err.message || 'Erreur chargement documents');
+      if (!err?.backendUnavailable) onFlash?.(err.message || 'Erreur chargement documents');
     } finally {
       setLoading(false);
     }
@@ -51,7 +51,7 @@ export default function ApproDossierDocuments({ demandeId, canManage = false, on
       onFlash?.('Document enregistré');
       await load();
     } catch (err) {
-      onFlash?.(err.message || 'Échec document');
+      if (!err?.backendUnavailable) onFlash?.(err.message || 'Échec document');
     } finally {
       setBusy(null);
     }
@@ -67,7 +67,7 @@ export default function ApproDossierDocuments({ demandeId, canManage = false, on
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
-      onFlash?.(err.message || 'Téléchargement refusé');
+      if (!err?.backendUnavailable) onFlash?.(err.message || 'Téléchargement refusé');
     }
   };
 

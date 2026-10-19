@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { createPortal } from 'react-dom';
 import { Eye, Info, Pencil, RefreshCw, Trash2, X } from 'lucide-react';
 import { apiRequest } from '../../services/api';
+import { askConfirm, pushToast } from '../../services/toastBus';
 import { droit, libelleDroits } from '../../data/rbacMatrix';
 import { LigneChargementTableau } from '../common/SpinnerPourcentage';
 
@@ -256,7 +257,7 @@ export default function ReferentielManager({ activePersona }) {
       .then((res) => {
         if (Array.isArray(res.ressources) && res.ressources.length) setRessources(res.ressources);
       })
-      .catch((err) => setError(err.message));
+      .catch((err) => setError(err?.backendUnavailable ? '' : err.message));
   }, []);
 
   const load = useCallback(async () => {
@@ -276,7 +277,7 @@ export default function ReferentielManager({ activePersona }) {
         return [...liste, { key: actif, label: res.label || actif }];
       });
     } catch (err) {
-      setError(err.message || 'Impossible de charger le référentiel.');
+      setError(err?.backendUnavailable ? '' : (err.message || 'Impossible de charger le référentiel.'));
     } finally {
       setLoading(false);
     }
@@ -323,18 +324,24 @@ export default function ReferentielManager({ activePersona }) {
       setForm(null);
       await load();
     } catch (err) {
-      setError(err.message);
+      setError(err?.backendUnavailable ? '' : err.message);
     }
   }
 
   async function supprimer(row) {
-    if (!window.confirm('Supprimer cet élément du référentiel ?')) return;
+    const ok = await askConfirm({
+      message: 'Supprimer cet élément du référentiel ?',
+      confirmLabel: 'Supprimer',
+      tone: 'danger',
+    });
+    if (!ok) return;
     setError('');
     try {
       await apiRequest(`/referentiel/${actif}/${row.id}`, { method: 'DELETE' });
+      pushToast('Élément supprimé du référentiel.', 'warning');
       await load();
     } catch (err) {
-      setError(err.message);
+      setError(err?.backendUnavailable ? '' : err.message);
     }
   }
 

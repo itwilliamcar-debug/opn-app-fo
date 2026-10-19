@@ -17,6 +17,7 @@ import {
   X,
 } from 'lucide-react';
 import { formatXAF } from '../../utils/formatters';
+import { askConfirm } from '../../services/toastBus';
 import {
   allocateFefo,
   closeDeliveryWorkflow,
@@ -133,7 +134,7 @@ export default function ApproNationalDesk({
       }
     } catch (err) {
       setOrders([]);
-      flash(err?.message || 'API Laravel injoignable — aucun dossier affiché.');
+      if (!err?.backendUnavailable) flash(err?.message || 'Impossible de charger les dossiers.');
     } finally {
       setLoading(false);
     }
@@ -146,7 +147,7 @@ export default function ApproNationalDesk({
       setMissions(Array.isArray(res?.missions) ? res.missions : []);
     } catch (err) {
       setMissions([]);
-      flash(err?.message || 'Impossible de charger les livraisons logistiques.');
+      if (!err?.backendUnavailable) flash(err?.message || 'Impossible de charger les livraisons.');
     } finally {
       setMissionsLoading(false);
     }
@@ -226,7 +227,7 @@ export default function ApproNationalDesk({
       }
       setDetail(res.demande || res);
     } catch (err) {
-      flash(err?.message || 'Impossible de charger le détail du dossier.');
+      if (!err?.backendUnavailable) flash(err?.message || 'Impossible de charger le détail du dossier.');
       setDetail(null);
     } finally {
       setDrawerLoading(false);
@@ -251,7 +252,7 @@ export default function ApproNationalDesk({
         await openDrawer(demandeId, true);
       }
     } catch (err) {
-      flash(err?.message || 'Erreur API — aucune transition locale de statut.');
+      if (!err?.backendUnavailable) flash(err?.message || 'Action impossible.');
     } finally {
       setActionBusyId(null);
     }
@@ -284,7 +285,16 @@ export default function ApproNationalDesk({
     caps.allocateFefo &&
     ['VALIDEE_NATIONALE', 'TRANSMISE_ACHATS', 'APPROUVEE_CIRCUIT'].includes(d.statut);
 
-  const handleInstruct = (d) => {
+  const refDemande = (d) => d.numero_demande || d.reference || d.id;
+
+  const handleInstruct = async (d) => {
+    const ok = await askConfirm({
+      message: d.statut === 'EN_INSTRUCTION_APPRO'
+        ? `Terminer l'instruction de ${refDemande(d)} ?`
+        : `Prendre en charge ${refDemande(d)} pour instruction ?`,
+      confirmLabel: d.statut === 'EN_INSTRUCTION_APPRO' ? 'Terminer' : 'Prendre en charge',
+    });
+    if (!ok) return;
     const nextAction = d.statut === 'EN_INSTRUCTION_APPRO' ? 'complete' : 'start';
     runAction(
       d.id,
@@ -304,7 +314,12 @@ export default function ApproNationalDesk({
     );
   };
 
-  const handleValidateNational = (d) => {
+  const handleValidateNational = async (d) => {
+    const ok = await askConfirm({
+      message: `Valider nationalement la demande ${refDemande(d)} ?`,
+      confirmLabel: 'Valider',
+    });
+    if (!ok) return;
     const commentaire =
       (commentById[d.id] || '').trim() ||
       'Validation nationale Appro — dotation autorisée depuis le hub Owendo.';
@@ -320,7 +335,12 @@ export default function ApproNationalDesk({
     );
   };
 
-  const handleTransferAchats = (d) => {
+  const handleTransferAchats = async (d) => {
+    const ok = await askConfirm({
+      message: `Transférer le dossier ${refDemande(d)} au service Achats ?`,
+      confirmLabel: 'Transférer',
+    });
+    if (!ok) return;
     runAction(
       d.id,
       () =>
@@ -332,7 +352,12 @@ export default function ApproNationalDesk({
     );
   };
 
-  const handleLaunchVisas = (d) => {
+  const handleLaunchVisas = async (d) => {
+    const ok = await askConfirm({
+      message: `Ouvrir le circuit de visas pour ${refDemande(d)} ?`,
+      confirmLabel: 'Ouvrir les visas',
+    });
+    if (!ok) return;
     runAction(
       d.id,
       () =>
@@ -344,9 +369,18 @@ export default function ApproNationalDesk({
     );
   };
 
-  const handleReject = (d) => {
+  const handleReject = async (d) => {
+    const decision = await askConfirm({
+      message: `Rejeter la demande ${refDemande(d)} ?`,
+      confirmLabel: 'Rejeter',
+      tone: 'danger',
+      reasonLabel: 'Motif du rejet',
+      reasonRequired: !(motifById[d.id] || '').trim(),
+    });
+    if (!decision) return;
     const motif =
       (motifById[d.id] || '').trim() ||
+      decision.reason ||
       'Dossier incomplet ou quantités non justifiées au regard du stock / CMM national.';
     runAction(
       d.id,
@@ -360,11 +394,21 @@ export default function ApproNationalDesk({
     );
   };
 
-  const handleAllocateFefo = (d) => {
+  const handleAllocateFefo = async (d) => {
+    const ok = await askConfirm({
+      message: `Lancer l'allocation FEFO pour ${refDemande(d)} ?`,
+      confirmLabel: 'Allouer',
+    });
+    if (!ok) return;
     runAction(d.id, () => allocateFefo(d.id), 'Allocation FEFO effectuée.');
   };
 
-  const handleConfirmFefo = (d) => {
+  const handleConfirmFefo = async (d) => {
+    const ok = await askConfirm({
+      message: `Confirmer la sortie magasin FEFO de ${refDemande(d)} ?`,
+      confirmLabel: 'Confirmer',
+    });
+    if (!ok) return;
     runAction(d.id, () => confirmFefo(d.id), 'Confirmation FEFO / sortie magasin enregistrée.');
   };
 
@@ -374,6 +418,11 @@ export default function ApproNationalDesk({
       return;
     }
     if (!caps.closeDelivery) return;
+    const ok = await askConfirm({
+      message: `Clôturer la livraison ${livraison.code_livraison || livraison.id} ?`,
+      confirmLabel: 'Clôturer',
+    });
+    if (!ok) return;
     setCloseBusyId(livraison.id);
     try {
       const res = await closeDeliveryWorkflow(livraison.id, {
@@ -389,7 +438,7 @@ export default function ApproNationalDesk({
       await loadMissions();
       await loadOrders();
     } catch (err) {
-      flash(err?.message || 'Erreur lors de la clôture livraison.');
+      if (!err?.backendUnavailable) flash(err?.message || 'Erreur lors de la clôture livraison.');
     } finally {
       setCloseBusyId(null);
     }

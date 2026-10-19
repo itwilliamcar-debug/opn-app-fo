@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import SuiviLogistiqueDirect from '../common/SuiviLogistiqueDirect';
 import { 
   Building2, 
@@ -54,6 +54,7 @@ import CatalogPdfModal from './CatalogPdfModal';
 import NewsletterEmailModal from './NewsletterEmailModal';
 import { MarchesPublicsSection } from './MarchesPublicsSection';
 import { API_BASE_URL } from '../../services/apiOrigin';
+import { openBackgroundSlot } from '../../services/api';
 
 export default function PublicPortal({ 
   onAccessWorkspace, 
@@ -90,8 +91,38 @@ export default function PublicPortal({
     return saved ? parseInt(saved, 10) : 156;
   });
   const [newsletterToast, setNewsletterToast] = useState(null);
+  const [site, setSite] = useState(null);
 
-  const selectedProvince = GABON_PROVINCES.find(p => p.id === selectedProvinceId) || GABON_PROVINCES[0];
+  useEffect(() => {
+    let cancelled = false;
+    const slot = openBackgroundSlot();
+    if (!slot) return undefined;
+    fetch(`${API_BASE_URL}/site`, {
+      headers: { Accept: 'application/json' },
+      signal: slot.signal,
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.success) setSite(data);
+      })
+      .catch(() => {})
+      .finally(() => slot.release());
+    return () => {
+      cancelled = true;
+      slot.abort();
+    };
+  }, []);
+
+  const provinces = site?.antennes?.length ? site.antennes : GABON_PROVINCES;
+  const catalog = site?.produits?.length ? site.produits : PHARMACEUTICAL_CATALOG;
+  const families = site?.familles?.length ? site.familles : PRODUCT_FAMILIES_LIST;
+  const selectedProvince = provinces.find((p) => p.id === selectedProvinceId) || provinces[0];
+
+  useEffect(() => {
+    if (typeof site?.stats?.abonnes === 'number') {
+      setSubscribersCount(site.stats.abonnes);
+    }
+  }, [site]);
 
   // 4 Grandes Missions Stratégiques
   const statutoryMissions = [
@@ -201,8 +232,54 @@ export default function PublicPortal({
     }
   ];
 
+  const MISSION_ICONS = { Building2, ShieldCheck, Truck, Pill, Activity, Award, FileText, MapPin, Layers, HeartPulse };
+  const liveArticles = site?.actualites?.length ? site.actualites : articles;
+  const liveMarches = site?.marches?.length ? site.marches : null;
+  const liveMarchesAccueil = liveMarches
+    ? (liveMarches.some((m) => m.accueil) ? liveMarches.filter((m) => m.accueil) : liveMarches).slice(0, 3)
+    : marchesPublics;
+  const liveMissions = site?.missions?.length
+    ? site.missions.map((m) => ({
+        title: m.titre,
+        desc: m.contenu,
+        icon: MISSION_ICONS[m.meta?.icone] || Building2,
+        accent: m.meta?.accent || 'border-l-4 border-l-[#2E68B4]',
+      }))
+    : statutoryMissions;
+  const contactInfo = {
+    lignes: [
+      'Office Pharmaceutique National (OPN)',
+      "Zone Portuaire & Logistique d'Owendo / Libreville",
+      'BP 3838 – République Gabonaise',
+    ],
+    telephone: '(+241) 074 35 79 29',
+    telephoneAlt: '011 70 20 00',
+    telephoneHref: '+241074357929',
+    email: 'contact@opn-gabon.com',
+    horaires: 'Lun - Ven : 07h30 – 15h30',
+    horairesCourt: 'Lun–Ven 07h30 – 15h30',
+    urgenceTexte: "En cas de rupture critique dans un hôpital provincial ou d'urgence épidémique, contactez immédiatement le Centre Opérationnel des Urgences.",
+    urgence1411: '1411',
+    urgenceTel: '(+241) 077 92 11 05',
+    urgenceTelHref: '+241077921105',
+    adresseCourte: 'Hub Owendo · B.P. 3838 — Libreville',
+    commercialLignes: '062 26 17 32 · 062 26 14 75 · 062 26 30 39',
+    emailCommercial: 'commercial@opn-gabon.com',
+    adresseOloumi: "Zone Industrielle d'Oloumi · B.P. 295",
+    siegeOloumi: "Zone Industrielle d'Oloumi, Libreville • Boîte Postale 295 • Hub Logistique et Magasins Centraux.",
+    siteWeb: 'https://www.opn-gabon.com',
+    siteLabel: 'www.opn-gabon.com',
+    baseline: "Centrale nationale d'achat pharmaceutique : disponibilité, qualité et accessibilité des médicaments essentiels.",
+    ...(site?.contact || {}),
+  };
+  const antennesCount = site?.stats?.antennes ?? provinces.length;
+  const produitsCount = site?.stats?.produits ?? catalog.length;
+  const famillesCount = site?.stats?.familles ?? Math.max(0, families.length - 1);
+  const chaineFroid = site?.stats?.chaineFroid ?? 100;
+  const featuredArticle = liveArticles[0];
+
   // Filtrage Dynamique Avancé du Catalogue National OPN
-  const filteredMedicaments = PHARMACEUTICAL_CATALOG.filter(m => {
+  const filteredMedicaments = catalog.filter(m => {
     const q = searchDci.trim().toLowerCase();
     const matchSearch = !q || 
       (m.dci || '').toLowerCase().includes(q) ||
@@ -275,7 +352,7 @@ export default function PublicPortal({
     }
 
     setIsFirstNewsletter(true);
-    setNewsletterDispatchedArticle(articles[0]);
+    setNewsletterDispatchedArticle(featuredArticle);
     setIsNewsletterModalOpen(true);
     setNewsletterToast(
       apiOk
@@ -286,7 +363,7 @@ export default function PublicPortal({
   };
 
   const handleBroadcastArticle = async (articleToBroadcast) => {
-    const targetArticle = articleToBroadcast || articles[0];
+    const targetArticle = articleToBroadcast || featuredArticle;
     let apiOk = false;
     try {
       const res = await fetch(`${API_BASE_URL}/newsletter/broadcast`, {
@@ -415,21 +492,25 @@ export default function PublicPortal({
 
                     {/* Paragraphe avec disponibilité en blanc */}
                     <p className="text-sm sm:text-base text-blue-100/95 max-w-2xl leading-relaxed font-normal">
-                      Garantir la <span className="text-white font-semibold">disponibilité permanente</span>, la <span className="text-[#FFDE16] font-semibold">qualité certifiée</span> et l'<span className="text-white font-semibold">accessibilité tarifaire</span> des médicaments essentiels pour toutes les structures sanitaires du Gabon.
+                      {site?.hero?.contenu || (
+                        <>
+                          Garantir la <span className="text-white font-semibold">disponibilité permanente</span>, la <span className="text-[#FFDE16] font-semibold">qualité certifiée</span> et l&apos;<span className="text-white font-semibold">accessibilité tarifaire</span> des médicaments essentiels pour toutes les structures sanitaires du Gabon.
+                        </>
+                      )}
                     </p>
 
                     {/* Chiffres clés : 9 en Blanc, 100% en Blanc, 350+ en Blanc */}
                     <div className="grid grid-cols-3 gap-3 pt-2 max-w-lg">
                       <div className="bg-white/10 border border-white/15 p-3.5 rounded-lg hover:bg-white/15 transition-all shadow-sm">
-                        <p className="text-2xl sm:text-3xl font-black text-white">9</p>
+                        <p className="text-2xl sm:text-3xl font-black text-white">{antennesCount}</p>
                         <p className="text-[10px] text-blue-200 uppercase font-bold tracking-wider mt-0.5">Antennes Provinciales</p>
                       </div>
                       <div className="bg-white/10 border border-white/15 p-3.5 rounded-lg hover:bg-white/15 transition-all shadow-sm">
-                        <p className="text-2xl sm:text-3xl font-black text-white">100 %</p>
+                        <p className="text-2xl sm:text-3xl font-black text-white">{chaineFroid} %</p>
                         <p className="text-[10px] text-blue-200 uppercase font-bold tracking-wider mt-0.5">Chaîne du Froid</p>
                       </div>
                       <div className="bg-white/10 border border-white/15 p-3.5 rounded-lg hover:bg-white/15 transition-all shadow-sm">
-                        <p className="text-2xl sm:text-3xl font-black text-white">350+</p>
+                        <p className="text-2xl sm:text-3xl font-black text-white">{produitsCount}</p>
                         <p className="text-[10px] text-blue-200 uppercase font-bold tracking-wider mt-0.5">Médicaments DCI</p>
                       </div>
                     </div>
@@ -454,7 +535,7 @@ export default function PublicPortal({
 
                 </div>
                 <div className="lg:col-span-5">
-                  <SuiviLogistiqueDirect />
+                  <SuiviLogistiqueDirect flux={site ? (site.suivi || []) : null} />
                 </div>
                 </div>
               </div>
@@ -463,7 +544,7 @@ export default function PublicPortal({
             {/* LES 4 MISSIONS STRATÉGIQUES */}
             <section className="py-8 -mt-5 relative z-20 max-w-7xl mx-auto px-4 sm:px-8">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {statutoryMissions.map((m, idx) => {
+                {liveMissions.map((m, idx) => {
                   const Icon = m.icon;
                   return (
                     <div 
@@ -510,7 +591,7 @@ export default function PublicPortal({
                         Directeur Général de l'OPN
                       </p>
                       <h4 className="text-lg sm:text-xl font-black text-white leading-tight drop-shadow-md">
-                        Colonel Annie Josette POATY
+                        {site?.dg?.meta?.nom || 'Colonel Annie Josette POATY'}
                       </h4>
                       <div className="pt-2 flex items-center gap-2 text-[11px] text-slate-200">
                         <span className="w-2 h-2 rounded-full bg-[#00A651]" />
@@ -528,30 +609,30 @@ export default function PublicPortal({
                       </div>
 
                       <h3 className="text-2xl font-bold tracking-tight text-white mb-3">
-                        « Le médicament pour tous, partout au Gabon »
+                        {site?.dg?.titre || '« Le médicament pour tous, partout au Gabon »'}
                       </h3>
 
                       <blockquote className="text-xs sm:text-sm text-blue-100 leading-relaxed italic space-y-3">
-                        <p>
-                          « L'Office Pharmaceutique National s'engage résolument dans la refondation de notre chaîne logistique de santé. Notre mission régalienne est de faire en sorte qu'aucun centre de santé, de Libreville à Makokou, de Port-Gentil à Tchibanga, ne connaisse de rupture sur les molécules vitales. »
-                        </p>
-                        <p>
-                          « Grâce à la numérisation des approvisionnements, au calcul rigoureux de la CMM et à la rigueur militaire de notre gestion, nous garantissons l'intégrité de la chaîne du froid, la traçabilité par lot (FEFO) et la stricte application des prix réglementés en Franc CFA. »
-                        </p>
+                        {(site?.dg?.meta?.paragraphes || [
+                          "L'Office Pharmaceutique National s'engage résolument dans la refondation de notre chaîne logistique de santé. Notre mission régalienne est de faire en sorte qu'aucun centre de santé, de Libreville à Makokou, de Port-Gentil à Tchibanga, ne connaisse de rupture sur les molécules vitales.",
+                          "Grâce à la numérisation des approvisionnements, au calcul rigoureux de la CMM et à la rigueur de notre gestion, nous garantissons l'intégrité de la chaîne du froid, la traçabilité par lot (FEFO) et la stricte application des prix réglementés en Franc CFA.",
+                        ]).map((paragraph) => (
+                          <p key={paragraph.slice(0, 24)}>« {paragraph} »</p>
+                        ))}
                       </blockquote>
                     </div>
 
                     <div className="pt-4 border-t border-blue-400/30 flex items-center justify-between">
                       <div className="text-xs text-blue-100">
-                        <strong className="text-white block font-bold">Colonel Annie Josette POATY</strong>
-                        <span className="text-[11px] text-emerald-300">Directeur Général de l'Office Pharmaceutique National</span>
+                        <strong className="text-white block font-bold">{site?.dg?.meta?.nom || 'Colonel Annie Josette POATY'}</strong>
+                        <span className="text-[11px] text-emerald-300">{site?.dg?.meta?.fonction || "Directeur Général de l'Office Pharmaceutique National"}</span>
                       </div>
 
                       <button 
                         onClick={() => setActiveNavTab('antennes')}
                         className="px-4 py-2 rounded bg-[#00A651] hover:bg-[#008742] text-white font-bold text-xs shadow-sm transition-all inline-flex items-center gap-1.5"
                       >
-                        <span>Voir les 9 Antennes Provinciales</span>
+                        <span>Voir les {antennesCount} Antennes Provinciales</span>
                         <ChevronRight className="w-3.5 h-3.5" />
                       </button>
                     </div>
@@ -573,7 +654,7 @@ export default function PublicPortal({
                       Maillage territorial
                     </div>
                     <h2 className="text-2xl sm:text-3xl font-extrabold text-[#2E68B4] tracking-tight">
-                      Nos 9 Antennes Provinciales
+                      Nos {antennesCount} Antennes Provinciales
                     </h2>
                   </div>
                   <p className="text-xs sm:text-sm text-slate-600 max-w-md">
@@ -630,7 +711,7 @@ export default function PublicPortal({
                     <div className="pt-3 border-t border-slate-200">
                       <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">Choisir une Province :</p>
                       <div className="grid grid-cols-3 sm:grid-cols-5 gap-1">
-                        {GABON_PROVINCES.map((p) => (
+                        {provinces.map((p) => (
                           <button
                             key={p.id}
                             onClick={() => setSelectedProvinceId(p.id)}
@@ -659,7 +740,7 @@ export default function PublicPortal({
                         </span>
                       </div>
                       <span className="text-[10px] font-bold text-[#2E68B4] bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                        9 Provinces Actives
+                        {antennesCount} Provinces Actives
                       </span>
                     </div>
 
@@ -709,7 +790,7 @@ export default function PublicPortal({
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {articles.slice(0, 4).map((item) => (
+                    {liveArticles.slice(0, 4).map((item) => (
                       <div 
                         key={item.id} 
                         className="bg-white rounded-md border border-slate-200 overflow-hidden shadow-xs hover:shadow-md transition-all flex flex-col justify-between group"
@@ -764,7 +845,7 @@ export default function PublicPortal({
                   </div>
 
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-                    {marchesPublics.slice(0, 3).map((mp) => (
+                    {liveMarchesAccueil.map((mp) => (
                       <div 
                         key={mp.id} 
                         className="bg-white rounded-md border border-slate-200 p-4 flex flex-col justify-between hover:shadow-md transition-all shadow-xs"
@@ -775,7 +856,7 @@ export default function PublicPortal({
                               {mp.type}
                             </span>
                             <span className="text-[10px] font-bold text-[#00A651] bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                              En cours
+                              {mp.statutLabel || 'En cours'}
                             </span>
                           </div>
 
@@ -841,12 +922,12 @@ export default function PublicPortal({
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6">
                   <div className="bg-white/10 backdrop-blur-md p-3 rounded-lg border border-white/15">
                     <div className="text-[11px] text-blue-200 uppercase font-semibold">Références Totales</div>
-                    <div className="text-xl font-black text-white mt-0.5">{PHARMACEUTICAL_CATALOG.length} Produits</div>
+                    <div className="text-xl font-black text-white mt-0.5">{produitsCount} Produits</div>
                     <div className="text-[10px] text-emerald-300 font-medium mt-0.5">✓ Conforme LNME / OMS</div>
                   </div>
                   <div className="bg-white/10 backdrop-blur-md p-3 rounded-lg border border-white/15">
                     <div className="text-[11px] text-blue-200 uppercase font-semibold">Familles Métier</div>
-                    <div className="text-xl font-black text-white mt-0.5">{PRODUCT_FAMILIES_LIST.length - 1} Catégories</div>
+                    <div className="text-xl font-black text-white mt-0.5">{famillesCount} Catégories</div>
                     <div className="text-[10px] text-blue-200 font-medium mt-0.5">ACT, Solutés, Urgences...</div>
                   </div>
                   <div className="bg-white/10 backdrop-blur-md p-3 rounded-lg border border-white/15">
@@ -856,7 +937,7 @@ export default function PublicPortal({
                   </div>
                   <div className="bg-white/10 backdrop-blur-md p-3 rounded-lg border border-white/15">
                     <div className="text-[11px] text-blue-200 uppercase font-semibold">Réseau Logistique</div>
-                    <div className="text-xl font-black text-emerald-400 mt-0.5">9 Provinces</div>
+                    <div className="text-xl font-black text-emerald-400 mt-0.5">{antennesCount} Provinces</div>
                     <div className="text-[10px] text-emerald-200 font-medium mt-0.5">Hub Central Owendo</div>
                   </div>
                 </div>
@@ -903,7 +984,7 @@ export default function PublicPortal({
                     }}
                     className="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#2E68B4] focus:bg-white shadow-xs"
                   >
-                    {PRODUCT_FAMILIES_LIST.map((fam) => (
+                    {families.map((fam) => (
                       <option key={fam} value={fam}>
                         {fam === 'TOUTES LES FAMILLES' ? 'Toutes les familles thérapeutiques' : fam}
                       </option>
@@ -1289,7 +1370,7 @@ export default function PublicPortal({
                 Maillage Territorial
               </div>
               <h2 className="text-2xl sm:text-3xl font-extrabold text-[#2E68B4] tracking-tight">
-                Nos 9 Antennes Provinciales
+                Nos {antennesCount} Antennes Provinciales
               </h2>
               <p className="text-xs sm:text-sm text-slate-600 mt-1">
                 Distribution continue et coordination logistique depuis le Hub Central d'Owendo
@@ -1345,7 +1426,7 @@ export default function PublicPortal({
                 <div className="pt-3 border-t border-slate-200">
                   <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">Choisir une Province :</p>
                   <div className="grid grid-cols-3 sm:grid-cols-5 gap-1">
-                    {GABON_PROVINCES.map((p) => (
+                    {provinces.map((p) => (
                       <button
                         key={p.id}
                         onClick={() => setSelectedProvinceId(p.id)}
@@ -1374,7 +1455,7 @@ export default function PublicPortal({
                     </span>
                   </div>
                   <span className="text-[10px] font-bold text-[#2E68B4] bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                    9 Provinces Actives
+                    {antennesCount} Provinces Actives
                   </span>
                 </div>
 
@@ -1434,26 +1515,26 @@ export default function PublicPortal({
                     (Première newsletter envoyée automatiquement aux nouveaux abonnés)
                   </span>
                 </div>
-                <span className="text-xs text-blue-100 font-semibold">{articles[0].date}</span>
+                <span className="text-xs text-blue-100 font-semibold">{featuredArticle?.date}</span>
               </div>
 
               <div className="p-6 sm:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
                 <div className="lg:col-span-8 space-y-4">
                   <span className="inline-block px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-blue-100 text-[#2E68B4]">
-                    {articles[0].tag}
+                    {featuredArticle?.tag}
                   </span>
                   
                   <h3 className="text-xl sm:text-2xl font-black text-slate-900 leading-tight">
-                    {articles[0].title}
+                    {featuredArticle?.title}
                   </h3>
 
                   <p className="text-xs sm:text-sm text-slate-700 leading-relaxed font-normal bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    {articles[0].summary}
+                    {featuredArticle?.summary}
                   </p>
 
                   <div className="flex flex-wrap items-center gap-3 pt-2">
                     <button 
-                      onClick={() => setSelectedArticleModal(articles[0])}
+                      onClick={() => featuredArticle && setSelectedArticleModal(featuredArticle)}
                       className="px-5 py-2.5 bg-[#2E68B4] hover:bg-[#215091] text-white text-xs font-bold rounded-lg shadow transition-all flex items-center gap-1.5"
                     >
                       <span>Lire l'article complet</span>
@@ -1461,7 +1542,7 @@ export default function PublicPortal({
                     </button>
 
                     <button 
-                      onClick={() => handleBroadcastArticle(articles[0])}
+                      onClick={() => featuredArticle && handleBroadcastArticle(featuredArticle)}
                       className="px-5 py-2.5 bg-[#00A651] hover:bg-[#008742] text-white text-xs font-bold rounded-lg shadow transition-all flex items-center gap-1.5"
                       title="Envoyer immédiatement cet article à tous les abonnés de la newsletter"
                     >
@@ -1500,7 +1581,7 @@ export default function PublicPortal({
               </h3>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-                {articles.map((item) => (
+                {liveArticles.map((item) => (
                   <div 
                     key={item.id} 
                     className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-md transition-all flex flex-col justify-between group"
@@ -1551,7 +1632,12 @@ export default function PublicPortal({
             VUE 5 : MARCHÉS PUBLICS (COMMANDE PUBLIQUE & TRANSPARENCE DGCPMP)
         ========================================================================= */}
         {activeNavTab === 'marches' && (
-          <MarchesPublicsSection formatXAF={formatXAF} />
+          <MarchesPublicsSection
+            formatXAF={formatXAF}
+            marches={liveMarches}
+            attributions={site?.attributions}
+            contact={contactInfo}
+          />
         )}
 
         {/* =========================================================================
@@ -1567,10 +1653,10 @@ export default function PublicPortal({
                 Centrale Nationale d'Achat • République Gabonaise
               </div>
               <h2 className="text-2xl sm:text-3xl font-extrabold text-[#2E68B4] tracking-tight">
-                À Propos de l'Office Pharmaceutique National (OPN)
+                {site?.apropos?.intro?.titre || "À Propos de l'Office Pharmaceutique National (OPN)"}
               </h2>
               <p className="text-xs sm:text-sm text-slate-600">
-                Société d'État investie d'une mission de service public à caractère sanitaire et social, sous la tutelle du Ministre en charge de la Santé.
+                {site?.apropos?.intro?.contenu || "Société d'État investie d'une mission de service public à caractère sanitaire et social, sous la tutelle du Ministre en charge de la Santé."}
               </p>
             </div>
 
@@ -1579,30 +1665,30 @@ export default function PublicPortal({
               <div className="p-3.5 bg-slate-50 rounded border border-slate-200 space-y-1">
                 <span className="text-slate-500 text-[11px] font-bold uppercase flex items-center gap-1.5 text-[#2E68B4]">
                   <FileText className="w-3.5 h-3.5" />
-                  Fondement Légal & Création
+                  {site?.apropos?.cadre?.[0]?.titre || 'Fondement Légal & Création'}
                 </span>
                 <p className="text-slate-800 font-semibold leading-relaxed">
-                  Créé par l'Ordonnance n°1/95 du 14 janvier 1995, modifiée par l'Ordonnance n°008/PR/2021 (art. 76) et ratifiée par la Loi n°007/2021 du 12 juillet 2021.
+                  {site?.apropos?.cadre?.[0]?.contenu || "Créé par l'Ordonnance n°1/95 du 14 janvier 1995, modifiée par l'Ordonnance n°008/PR/2021 (art. 76) et ratifiée par la Loi n°007/2021 du 12 juillet 2021."}
                 </p>
               </div>
 
               <div className="p-3.5 bg-slate-50 rounded border border-slate-200 space-y-1">
                 <span className="text-slate-500 text-[11px] font-bold uppercase flex items-center gap-1.5 text-[#00A651]">
                   <ShieldCheck className="w-3.5 h-3.5" />
-                  Statut Juridique & Gouvernance
+                  {site?.apropos?.cadre?.[1]?.titre || 'Statut Juridique & Gouvernance'}
                 </span>
                 <p className="text-slate-800 font-semibold leading-relaxed">
-                  Société d'État (Loi n°20/2005, art. 44) dotée de l'autonomie financière et administrative, régie par la comptabilité publique et l'Acte Uniforme OHADA.
+                  {site?.apropos?.cadre?.[1]?.contenu || "Société d'État (Loi n°20/2005, art. 44) dotée de l'autonomie financière et administrative, régie par la comptabilité publique et l'Acte Uniforme OHADA."}
                 </p>
               </div>
 
               <div className="p-3.5 bg-slate-50 rounded border border-slate-200 space-y-1">
                 <span className="text-slate-500 text-[11px] font-bold uppercase flex items-center gap-1.5 text-[#2E68B4]">
                   <MapPin className="w-3.5 h-3.5" />
-                  Siège Social Officiel
+                  {site?.apropos?.cadre?.[2]?.titre || 'Siège Social Officiel'}
                 </span>
                 <p className="text-slate-800 font-semibold leading-relaxed">
-                  Zone Industrielle d'Oloumi, Libreville • Boîte Postale 295 • Hub Logistique et Magasins Centraux.
+                  {site?.apropos?.cadre?.[2]?.contenu || contactInfo.siegeOloumi}
                 </p>
               </div>
             </div>
@@ -1617,9 +1703,9 @@ export default function PublicPortal({
                     <Activity className="w-3 h-3" />
                     Vision Stratégique 2030
                   </div>
-                  <h3 className="text-base font-bold mt-2">Zéro Rupture Médicamenteuse</h3>
+                  <h3 className="text-base font-bold mt-2">{site?.apropos?.vision?.[0]?.titre || 'Zéro Rupture Médicamenteuse'}</h3>
                   <p className="text-xs text-emerald-100 mt-1 leading-relaxed">
-                    « Mettre fin aux manques de médicaments et autres produits de santé essentiels dans toutes les formations sanitaires du Gabon d’ici à 2030. »
+                    « {site?.apropos?.vision?.[0]?.contenu || "Mettre fin aux manques de médicaments et autres produits de santé essentiels dans toutes les formations sanitaires du Gabon d’ici à 2030."} »
                   </p>
                 </div>
                 <span className="text-[10px] text-emerald-200 font-mono">Horizon Gabon 2030</span>
@@ -1632,9 +1718,9 @@ export default function PublicPortal({
                     <Award className="w-3 h-3" />
                     Ambition d'Excellence
                   </div>
-                  <h3 className="text-base font-bold mt-2">Référence Panafricaine</h3>
+                  <h3 className="text-base font-bold mt-2">{site?.apropos?.vision?.[1]?.titre || 'Référence Panafricaine'}</h3>
                   <p className="text-xs text-blue-100 mt-1 leading-relaxed">
-                    « Se hisser aux standards des meilleures centrales d'achat africaines et faire de l'OPN un véritable pôle d'excellence en approvisionnement au Gabon. »
+                    « {site?.apropos?.vision?.[1]?.contenu || "Se hisser aux standards des meilleures centrales d'achat africaines et faire de l'OPN un véritable pôle d'excellence en approvisionnement au Gabon."} »
                   </p>
                 </div>
                 <span className="text-[10px] text-blue-200 font-mono">Standards Internationaux</span>
@@ -1647,12 +1733,12 @@ export default function PublicPortal({
                     <Building2 className="w-3 h-3" />
                     Mission de Service Public
                   </div>
-                  <h3 className="text-base font-bold mt-2">Accessibilité & Moindre Coût</h3>
+                  <h3 className="text-base font-bold mt-2">{site?.apropos?.vision?.[2]?.titre || 'Accessibilité & Moindre Coût'}</h3>
                   <p className="text-xs text-blue-100 mt-1 leading-relaxed">
-                    « Assurer l’approvisionnement des MAPS sur toute l'étendue du territoire national et garantir leur accessibilité à moindre coût aux populations. »
+                    « {site?.apropos?.vision?.[2]?.contenu || "Assurer l’approvisionnement des MAPS sur toute l'étendue du territoire national et garantir leur accessibilité à moindre coût aux populations."} »
                   </p>
                 </div>
-                <span className="text-[10px] text-blue-200 font-mono">9 Provinces Couvertes</span>
+                <span className="text-[10px] text-blue-200 font-mono">{site?.apropos?.vision?.[2]?.meta?.note || `${antennesCount} Provinces Couvertes`}</span>
               </div>
 
             </div>
@@ -1669,9 +1755,9 @@ export default function PublicPortal({
                   <div className="w-8 h-8 rounded bg-emerald-100 text-[#00A651] font-bold flex items-center justify-center text-xs">
                     01
                   </div>
-                  <h4 className="font-bold text-slate-900 text-xs">Qualité & Moindre Coût</h4>
+                  <h4 className="font-bold text-slate-900 text-xs">{site?.apropos?.objectifs?.[0]?.titre || 'Qualité & Moindre Coût'}</h4>
                   <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Médicament de qualité, au bon endroit, au bon moment et au juste prix, dans le respect de la Liste Nationale des Médicaments Essentiels (MEG).
+                    {site?.apropos?.objectifs?.[0]?.contenu || 'Médicament de qualité, au bon endroit, au bon moment et au juste prix, dans le respect de la Liste Nationale des Médicaments Essentiels (MEG).'}
                   </p>
                 </div>
 
@@ -1679,9 +1765,9 @@ export default function PublicPortal({
                   <div className="w-8 h-8 rounded bg-blue-100 text-[#2E68B4] font-bold flex items-center justify-center text-xs">
                     02
                   </div>
-                  <h4 className="font-bold text-slate-900 text-xs">Chaîne d'Approvisionnement</h4>
+                  <h4 className="font-bold text-slate-900 text-xs">{site?.apropos?.objectifs?.[1]?.titre || "Chaîne d'Approvisionnement"}</h4>
                   <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Développement et fiabilisation d'un réseau logistique national sécurisé reliant Libreville/Owendo aux 9 antennes régionales.
+                    {site?.apropos?.objectifs?.[1]?.contenu || "Développement et fiabilisation d'un réseau logistique national sécurisé reliant Libreville/Owendo aux antennes régionales."}
                   </p>
                 </div>
 
@@ -1689,9 +1775,9 @@ export default function PublicPortal({
                   <div className="w-8 h-8 rounded bg-amber-100 text-amber-700 font-bold flex items-center justify-center text-xs">
                     03
                   </div>
-                  <h4 className="font-bold text-slate-900 text-xs">Renforcement des Capacités</h4>
+                  <h4 className="font-bold text-slate-900 text-xs">{site?.apropos?.objectifs?.[2]?.titre || 'Renforcement des Capacités'}</h4>
                   <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Formation continue et accompagnement technique des gestionnaires hospitaliers de médicaments dans toutes les formations sanitaires.
+                    {site?.apropos?.objectifs?.[2]?.contenu || 'Formation continue et accompagnement technique des gestionnaires hospitaliers de médicaments dans toutes les formations sanitaires.'}
                   </p>
                 </div>
 
@@ -1699,9 +1785,9 @@ export default function PublicPortal({
                   <div className="w-8 h-8 rounded bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center text-xs">
                     04
                   </div>
-                  <h4 className="font-bold text-slate-900 text-xs">Conseil au Gouvernement</h4>
+                  <h4 className="font-bold text-slate-900 text-xs">{site?.apropos?.objectifs?.[3]?.titre || 'Conseil au Gouvernement'}</h4>
                   <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Assistance de l'État dans la formulation des orientations et la prise de décisions pour la politique pharmaceutique nationale.
+                    {site?.apropos?.objectifs?.[3]?.contenu || "Assistance de l'État dans la formulation des orientations et la prise de décisions pour la politique pharmaceutique nationale."}
                   </p>
                 </div>
               </div>
@@ -1728,13 +1814,13 @@ export default function PublicPortal({
                       </span>
                       <Building2 className="w-4 h-4 text-[#2E68B4]" />
                     </div>
-                    <h4 className="text-sm font-bold text-slate-900">L'Achat Stratégique & Marchés Publics</h4>
+                    <h4 className="text-sm font-bold text-slate-900">{site?.apropos?.activites?.[0]?.titre || "L'Achat Stratégique & Marchés Publics"}</h4>
                     <p className="text-slate-600 leading-relaxed">
-                      Sélection rigoureuse selon le rapport Qualité/Prix : collecte des besoins des structures, quantification CMM, passation conforme au Code des Marchés Publics (<strong>AOIO, AOR, Gré à Gré, Demande de cotations</strong>), attribution et suivi d'acheminement.
+                      {site?.apropos?.activites?.[0]?.contenu || "Sélection rigoureuse selon le rapport Qualité/Prix : collecte des besoins des structures, quantification CMM, passation conforme au Code des Marchés Publics, attribution et suivi d'acheminement."}
                     </p>
                   </div>
                   <div className="pt-2 border-t border-slate-100 text-[11px] text-[#2E68B4] font-semibold">
-                    ✓ Respect strict du Code des Marchés Publics
+                    ✓ {site?.apropos?.activites?.[0]?.meta?.pied || 'Respect strict du Code des Marchés Publics'}
                   </div>
                 </div>
 
@@ -1747,13 +1833,13 @@ export default function PublicPortal({
                       </span>
                       <Layers className="w-4 h-4 text-[#00A651]" />
                     </div>
-                    <h4 className="text-sm font-bold text-slate-900">Stockage Sécurisé & Logiciel SAGE X3</h4>
+                    <h4 className="text-sm font-bold text-slate-900">{site?.apropos?.activites?.[1]?.titre || 'Stockage Sécurisé & Logiciel SAGE X3'}</h4>
                     <p className="text-slate-600 leading-relaxed">
-                      <strong>4 magasins de gros + 1 magasin dédié aux programmes VIH/Sida et Tuberculose</strong>. Gestion informatisée par lot et emplacement sous <strong>SAGE X3</strong>, contrôle de conformité à réception, respect de la chaîne du froid et inventaires contradictoires.
+                      {site?.apropos?.activites?.[1]?.contenu || 'Magasins de gros et magasin dédié aux programmes. Gestion informatisée par lot et emplacement, contrôle de conformité à réception, chaîne du froid et inventaires contradictoires.'}
                     </p>
                   </div>
                   <div className="pt-2 border-t border-slate-100 text-[11px] text-[#00A651] font-semibold">
-                    ✓ Traçabilité FEFO informatisée SAGE X3
+                    ✓ {site?.apropos?.activites?.[1]?.meta?.pied || 'Traçabilité FEFO informatisée'}
                   </div>
                 </div>
 
@@ -1766,13 +1852,13 @@ export default function PublicPortal({
                       </span>
                       <Truck className="w-4 h-4 text-amber-700" />
                     </div>
-                    <h4 className="text-sm font-bold text-slate-900">Distribution aux 9 Antennes Provinciales</h4>
+                    <h4 className="text-sm font-bold text-slate-900">{site?.apropos?.activites?.[2]?.titre || `Distribution aux ${antennesCount} Antennes Provinciales`}</h4>
                     <p className="text-slate-600 leading-relaxed">
-                      Réseau de <strong>9 antennes régionales</strong> approvisionnées semestriellement. Clients publics (CHU, CHR, HD, Hôpitaux spécialisés, Dispensaires) et privés (Cliniques, grossistes, pharmacies publiques, monopole réserve hospitalière).
+                      {site?.apropos?.activites?.[2]?.contenu || 'Réseau d’antennes régionales approvisionnées. Clients publics (CHU, CHR, HD, hôpitaux, dispensaires) et privés (cliniques, grossistes, pharmacies).'}
                     </p>
                   </div>
                   <div className="pt-2 border-t border-slate-100 text-[11px] text-amber-800 font-semibold">
-                    ✓ Processus cadencé : devis ➔ colisage ➔ livraison
+                    ✓ {site?.apropos?.activites?.[2]?.meta?.pied || 'Processus cadencé : devis, colisage, livraison'}
                   </div>
                 </div>
 
@@ -1785,13 +1871,13 @@ export default function PublicPortal({
                       </span>
                       <ShieldCheck className="w-4 h-4 text-rose-600" />
                     </div>
-                    <h4 className="text-sm font-bold text-slate-900">Démarche Qualité & Contrôle ANMAPS</h4>
+                    <h4 className="text-sm font-bold text-slate-900">{site?.apropos?.activites?.[3]?.titre || 'Démarche Qualité & Contrôle ANMAPS'}</h4>
                     <p className="text-slate-600 leading-relaxed">
-                      Conformité permanente aux normes OMS. Préqualification continue des couples produit/fabricant et contrôles qualité au laboratoire menés en amont avec l'<strong>Agence Nationale du Médicament et Autres Produits de Santé (ANMAPS)</strong>.
+                      {site?.apropos?.activites?.[3]?.contenu || "Conformité aux normes OMS. Préqualification des couples produit/fabricant et contrôles qualité menés avec l'Agence Nationale du Médicament et Autres Produits de Santé (ANMAPS)."}
                     </p>
                   </div>
                   <div className="pt-2 border-t border-slate-100 text-[11px] text-rose-700 font-semibold">
-                    ✓ Préqualification & Normes OMS certifiées
+                    ✓ {site?.apropos?.activites?.[3]?.meta?.pied || 'Préqualification et normes OMS'}
                   </div>
                 </div>
 
@@ -1804,16 +1890,13 @@ export default function PublicPortal({
                       </span>
                       <HeartPulse className="w-4 h-4 text-indigo-700" />
                     </div>
-                    <h4 className="text-sm font-bold text-slate-900">Appui & Accompagnement des Formations Sanitaires</h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-slate-600 text-[11px] pt-1">
-                      <p>• <strong>Assistance technique & Planification :</strong> Prévision des besoins en MAPS et optimisation des réapprovisionnements.</p>
-                      <p>• <strong>Substitution DCI équivalente :</strong> Proposition d'alternatives thérapeutiques de même substance active pour éviter toute rupture.</p>
-                      <p>• <strong>Sensibilisation à la conservation :</strong> Rationalisation des ressources et maintien des conditions optimales de stockage.</p>
-                      <p>• <strong>Coordination & Partenariat :</strong> Fluidification continue du circuit de dispensation avec les équipes médicales.</p>
-                    </div>
+                    <h4 className="text-sm font-bold text-slate-900">{site?.apropos?.activites?.[4]?.titre || 'Appui & Accompagnement des Formations Sanitaires'}</h4>
+                    <p className="text-slate-600 leading-relaxed text-[11px]">
+                      {site?.apropos?.activites?.[4]?.contenu || "Assistance technique et planification des besoins, substitution DCI équivalente, sensibilisation à la conservation, coordination avec les équipes médicales."}
+                    </p>
                   </div>
                   <div className="pt-2 border-t border-slate-100 text-[11px] text-indigo-700 font-semibold">
-                    ✓ Disponibilité continue & équitable sur l'ensemble du territoire
+                    ✓ {site?.apropos?.activites?.[4]?.meta?.pied || "Disponibilité continue sur l'ensemble du territoire"}
                   </div>
                 </div>
 
@@ -1852,23 +1935,23 @@ export default function PublicPortal({
                     Siège National & Hub Central
                   </h4>
                   <p className="text-slate-600">
-                    Office Pharmaceutique National (OPN)<br />
-                    Zone Portuaire & Logistique d'Owendo / Libreville<br />
-                    BP 3838 – République Gabonaise
+                    {(contactInfo.lignes || []).map((ligne) => (
+                      <span key={ligne} className="block">{ligne}</span>
+                    ))}
                   </p>
 
                   <div className="pt-2 border-t border-slate-200 space-y-2">
                     <div className="flex items-center gap-2">
                       <Phone className="w-4 h-4 text-slate-500" />
-                      <span>Standard : <strong>(+241) 074 35 79 29 / 011 70 20 00</strong></span>
+                      <span>Standard : <strong>{contactInfo.telephone} / {contactInfo.telephoneAlt}</strong></span>
                     </div>
                     <div className="flex items-center gap-2">
                       <Mail className="w-4 h-4 text-slate-500" />
-                      <span>Email officiel : <strong>contact@opn-gabon.com</strong></span>
+                      <span>Email officiel : <strong>{contactInfo.email}</strong></span>
                     </div>
                     <div className="flex items-center gap-2">
                       <Clock className="w-4 h-4 text-slate-500" />
-                      <span>Horaires : <strong>Lun - Ven : 07h30 – 15h30</strong></span>
+                      <span>Horaires : <strong>{contactInfo.horaires}</strong></span>
                     </div>
                   </div>
                 </div>
@@ -1879,7 +1962,7 @@ export default function PublicPortal({
                     Ligne d'Urgence Sanitaire 24h/24
                   </p>
                   <p className="text-[11px] text-emerald-800 mt-1">
-                    En cas de rupture critique dans un hôpital provincial ou d'urgence épidémique, contactez immédiatement le Centre Opérationnel des Urgences au <strong>1411</strong> ou <strong>(+241) 077 92 11 05</strong>.
+                    {contactInfo.urgenceTexte} Contact : <strong>{contactInfo.urgence1411}</strong> ou <strong>{contactInfo.urgenceTel}</strong>.
                   </p>
                 </div>
               </div>
@@ -1998,23 +2081,23 @@ export default function PublicPortal({
                     Urgence sanitaire — COD Libreville
                   </p>
                   <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
-                    Disponible 24h/24 pour les structures sanitaires des 9 provinces.
+                    Disponible 24h/24 pour les structures sanitaires des {antennesCount} provinces.
                   </p>
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2.5 shrink-0 md:pl-4">
                 <a
-                  href="tel:1411"
+                  href={`tel:${contactInfo.urgence1411}`}
                   className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md bg-[#2E68B4] hover:bg-[#245794] text-white text-xs font-bold transition-colors"
                 >
                   <Phone className="w-3.5 h-3.5" />
-                  1411
+                  {contactInfo.urgence1411}
                 </a>
                 <a
-                  href="tel:+241077921105"
+                  href={`tel:${contactInfo.urgenceTelHref}`}
                   className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md bg-white/10 hover:bg-white/15 border border-white/15 text-white text-xs font-semibold transition-colors"
                 >
-                  (+241) 077 92 11 05
+                  {contactInfo.urgenceTel}
                 </a>
               </div>
             </div>
@@ -2028,15 +2111,15 @@ export default function PublicPortal({
                   className="h-10 sm:h-11 w-auto object-contain"
                 />
                 <p className="text-xs text-slate-400 leading-relaxed max-w-xs">
-                  Centrale nationale d&apos;achat pharmaceutique : disponibilité, qualité et accessibilité des médicaments essentiels.
+                  {contactInfo.baseline}
                 </p>
                 <div className="flex items-start gap-2 text-xs text-slate-400 pt-1">
                   <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
-                  <span>Hub Owendo · B.P. 3838 — Libreville</span>
+                  <span>{contactInfo.adresseCourte}</span>
                 </div>
                 <div className="flex items-center gap-2 text-[11px] text-slate-400">
                   <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  <span>Lun–Ven 07h30 – 15h30</span>
+                  <span>{contactInfo.horairesCourt}</span>
                 </div>
               </div>
 
@@ -2049,18 +2132,18 @@ export default function PublicPortal({
                     <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
                     <div>
                       <span className="block text-[10px] text-slate-400 font-semibold uppercase tracking-wide">Standard</span>
-                      <a href="tel:+241074357929" className="font-bold text-white hover:opacity-80 transition-opacity">
-                        (+241) 074 35 79 29
+                      <a href={`tel:${contactInfo.telephoneHref}`} className="font-bold text-white hover:opacity-80 transition-opacity">
+                        {contactInfo.telephone}
                       </a>
-                      <span className="block text-slate-400 mt-0.5">ou 011 70 20 00</span>
+                      <span className="block text-slate-400 mt-0.5">ou {contactInfo.telephoneAlt}</span>
                     </div>
                   </li>
                   <li className="flex items-start gap-2.5">
                     <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
                     <div>
                       <span className="block text-[10px] text-slate-400 font-semibold uppercase tracking-wide">Email</span>
-                      <a href="mailto:contact@opn-gabon.com" className="font-semibold text-white hover:opacity-80 break-all">
-                        contact@opn-gabon.com
+                      <a href={`mailto:${contactInfo.email}`} className="font-semibold text-white hover:opacity-80 break-all">
+                        {contactInfo.email}
                       </a>
                     </div>
                   </li>
@@ -2071,18 +2154,18 @@ export default function PublicPortal({
                     </p>
                     <span className="block text-[10px] text-slate-400 font-semibold mb-0.5">Lignes commerciales :</span>
                     <p className="font-semibold text-white leading-relaxed">
-                      062 26 17 32 · 062 26 14 75 · 062 26 30 39
+                      {contactInfo.commercialLignes}
                     </p>
                     <div className="mt-1 space-y-0.5 text-[11px]">
                       <div>
                         <span className="text-slate-400">E-mail : </span>
-                        <a href="mailto:commercial@opn-gabon.com" className="text-white hover:opacity-80 font-medium">
-                          commercial@opn-gabon.com
+                        <a href={`mailto:${contactInfo.emailCommercial}`} className="text-white hover:opacity-80 font-medium">
+                          {contactInfo.emailCommercial}
                         </a>
                       </div>
                     </div>
                     <p className="text-[10px] text-slate-400 mt-1">
-                      Zone Industrielle d&apos;Oloumi · B.P. 295
+                      {contactInfo.adresseOloumi}
                     </p>
                   </li>
                 </ul>
@@ -2127,7 +2210,7 @@ export default function PublicPortal({
                   type="button"
                   onClick={() => {
                     setIsFirstNewsletter(true);
-                    setNewsletterDispatchedArticle(articles[0]);
+                    setNewsletterDispatchedArticle(featuredArticle);
                     setIsNewsletterModalOpen(true);
                   }}
                   className="text-[11px] text-slate-400 hover:text-white underline underline-offset-2 flex items-center gap-1"
@@ -2140,13 +2223,13 @@ export default function PublicPortal({
 
             <div className="pt-6 border-t border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <a
-                href="https://www.opn-gabon.com"
+                href={contactInfo.siteWeb || 'https://www.opn-gabon.com'}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-1.5 text-[11px] text-white hover:opacity-80 transition-opacity"
               >
                 <Globe className="w-3.5 h-3.5 text-slate-400" />
-                www.opn-gabon.com
+                {contactInfo.siteLabel || 'www.opn-gabon.com'}
               </a>
               <p className="text-[10px] text-slate-400 leading-relaxed sm:text-right">
                 © {new Date().getFullYear()} Office Pharmaceutique National (OPN) — Tous droits réservés.
@@ -2329,11 +2412,11 @@ export default function PublicPortal({
               <div className="space-y-2">
                 <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                   <Truck className="w-4 h-4 text-[#2E68B4]" />
-                  Disponibilité dans les 9 Antennes Provinciales :
+                  Disponibilité dans les {antennesCount} Antennes Provinciales :
                 </h4>
                 <div className="grid grid-cols-3 sm:grid-cols-3 gap-2 text-xs">
                   {Object.entries(selectedProductModal.stocksParAntenne).map(([antId, qty]) => {
-                    const prov = GABON_PROVINCES.find(p => p.id === antId);
+                    const prov = provinces.find(p => p.id === antId);
                     return (
                       <div key={antId} className="p-2 bg-slate-50 border border-slate-200 rounded flex justify-between items-center">
                         <span className="text-slate-600 font-medium truncate">{prov ? prov.chefLieu : antId} :</span>
@@ -2373,7 +2456,7 @@ export default function PublicPortal({
         isOpen={isNewsletterModalOpen}
         onClose={() => setIsNewsletterModalOpen(false)}
         subscriberEmail={newsletterEmail || 'abonne@citoyen.ga'}
-        article={newsletterDispatchedArticle || articles[0]}
+        article={newsletterDispatchedArticle || featuredArticle}
         isFirstSubscription={isFirstNewsletter}
       />
 

@@ -2,7 +2,7 @@
  * OPN Connect — API client (Sanctum)
  * Messagerie privée, audio, emoji, Jitsi
  */
-import { getAuthToken } from './api';
+import { getAuthToken, openBackgroundSlot } from './api';
 import { API_BASE_URL } from './apiOrigin';
 
 function getHeaders(extra = {}) {
@@ -294,11 +294,18 @@ export async function startVisioCall(conversationId, { title } = {}) {
 
 /** Invitations visio destinées à l'utilisateur courant */
 export async function fetchIncomingVisioInvites() {
-  const response = await fetch(`${API_BASE_URL}/connect/visio/incoming`, {
-    headers: getJsonHeaders(),
-  });
-  const data = await parseResponse(response);
-  return unwrapList(data);
+  const slot = openBackgroundSlot();
+  if (!slot) return [];
+  try {
+    const response = await fetch(`${API_BASE_URL}/connect/visio/incoming`, {
+      headers: getJsonHeaders(),
+      signal: slot.signal,
+    });
+    const data = await parseResponse(response);
+    return unwrapList(data);
+  } finally {
+    slot.release();
+  }
 }
 
 const RING_STORAGE_KEY = 'opn_visio_ring_v1';

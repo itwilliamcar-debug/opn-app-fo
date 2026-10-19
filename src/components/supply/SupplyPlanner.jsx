@@ -132,7 +132,7 @@ export default function SupplyPlanner({ activePersona, sanctumReady = false }) {
       setAntennes([]);
       setOrdersList([]);
       setSelectedOrder(null);
-      setLoadError(err?.message || 'Connexion au serveur central OPN indisponible — données non synchronisées.');
+      setLoadError(err?.backendUnavailable ? '' : (err?.message || 'Connexion au serveur indisponible — données non synchronisées.'));
     } finally {
       setLoading(false);
     }
@@ -234,7 +234,7 @@ export default function SupplyPlanner({ activePersona, sanctumReady = false }) {
       flashSuccess('Simulation CMM API confirmée (Jean Obiang / Owendo hub).');
     } catch (err) {
       setApiSimulation(null);
-      setActionError(err?.message || 'Échec simulation CMM API.');
+      setActionError(err?.backendUnavailable ? '' : (err?.message || 'Échec simulation CMM.'));
     } finally {
       setCmmBusy(false);
     }
@@ -281,7 +281,7 @@ export default function SupplyPlanner({ activePersona, sanctumReady = false }) {
       await loadData();
       if (res.demande) setSelectedOrder(res.demande);
     } catch (err) {
-      setActionError(err?.message || 'Échec création demande — aucune commande locale fictive.');
+      setActionError(err?.backendUnavailable ? '' : (err?.message || 'Échec création de la demande.'));
     } finally {
       setSubmitting(false);
     }

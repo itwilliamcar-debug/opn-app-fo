@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import OpnLogo from './OpnLogo';
 import { downloadElementAsPdf, previewPrintDocument } from '../../utils/pdfExport';
+import { pushToast } from '../../services/toastBus';
 import { formatXAF } from '../../utils/formatters';
 
 export default function PlaquetteCommercialeModal({ isOpen, onClose }) {
@@ -1007,7 +1008,7 @@ export default function PlaquetteCommercialeModal({ isOpen, onClose }) {
                       <button
                         type="button"
                         onClick={() => {
-                          alert("Votre demande de démonstration exécutive a été enregistrée auprès du Cabinet de la Direction Générale de l'OPN.");
+                          pushToast("Votre demande de démonstration exécutive a été enregistrée auprès du Cabinet de la Direction Générale de l'OPN.");
                         }}
                         className="px-5 py-2.5 bg-gradient-to-r from-[#00A651] to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white rounded-xl text-xs font-black shadow-lg transition-all cursor-pointer"
                       >

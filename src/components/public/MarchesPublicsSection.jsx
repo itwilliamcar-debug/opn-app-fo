@@ -215,7 +215,12 @@ export const ATTRIBUTIONS_RECENTES = [
   }
 ];
 
-export function MarchesPublicsSection({ formatXAF = (v) => `${(v || 0).toLocaleString('fr-FR')} FCFA` }) {
+export function MarchesPublicsSection({
+  formatXAF = (v) => `${(v || 0).toLocaleString('fr-FR')} FCFA`,
+  marches = null,
+  attributions = null,
+  contact = null,
+}) {
   const [activeTab, setActiveTab] = useState('tenders'); // 'tenders' | 'awarded' | 'guide'
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
@@ -223,6 +228,12 @@ export function MarchesPublicsSection({ formatXAF = (v) => `${(v || 0).toLocaleS
   const [selectedModalTender, setSelectedModalTender] = useState(null);
   const [showSubmissionForm, setShowSubmissionForm] = useState(false);
   const [submissionSuccess, setSubmissionSuccess] = useState(false);
+  const sourceMarches = marches?.length ? marches : MARCHES_PUBLICS_DATA;
+  const sourceAttributions = attributions?.length ? attributions : ATTRIBUTIONS_RECENTES;
+  const hotlineEmail = contact?.marchesEmail || 'contact@opn-gabon.com';
+  const hotlineTel = contact?.marchesTel || '+241 01 76 55 07';
+  const hotlineHref = contact?.marchesTelHref || '+24101765507';
+
   const [submissionData, setSubmissionData] = useState({
     entreprise: '',
     rccm: '',
@@ -235,12 +246,12 @@ export function MarchesPublicsSection({ formatXAF = (v) => `${(v || 0).toLocaleS
 
   // Calcul du budget total en consultation
   const totalBudgetEnConsultation = useMemo(() => {
-    return MARCHES_PUBLICS_DATA.reduce((acc, curr) => acc + (curr.budget || 0), 0);
-  }, []);
+    return sourceMarches.reduce((acc, curr) => acc + (curr.budget || 0), 0);
+  }, [sourceMarches]);
 
   // Filtrage des marchés
   const filteredMarches = useMemo(() => {
-    return MARCHES_PUBLICS_DATA.filter((mp) => {
+    return sourceMarches.filter((mp) => {
       const q = searchTerm.trim().toLowerCase();
       const matchSearch = !q ||
         mp.titre.toLowerCase().includes(q) ||
@@ -253,7 +264,7 @@ export function MarchesPublicsSection({ formatXAF = (v) => `${(v || 0).toLocaleS
 
       return matchSearch && matchCategory && matchType;
     });
-  }, [searchTerm, selectedCategory, selectedType]);
+  }, [searchTerm, selectedCategory, selectedType, sourceMarches]);
 
   const handleDownloadDao = (tender) => {
     const lots = (tender.allotissement || [])
@@ -364,7 +375,7 @@ export function MarchesPublicsSection({ formatXAF = (v) => `${(v || 0).toLocaleS
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6">
             <div className="bg-white/10 backdrop-blur-md p-3 rounded-lg border border-white/15">
               <div className="text-[11px] text-blue-200 uppercase font-semibold">Appels d'Offres Actifs</div>
-              <div className="text-xl font-black text-white mt-0.5">{MARCHES_PUBLICS_DATA.length} Avis en cours</div>
+              <div className="text-xl font-black text-white mt-0.5">{sourceMarches.length} Avis en cours</div>
               <div className="text-[10px] text-emerald-300 font-medium mt-0.5">✓ Procédures ouvertes</div>
             </div>
 
@@ -400,7 +411,7 @@ export function MarchesPublicsSection({ formatXAF = (v) => `${(v || 0).toLocaleS
           }`}
         >
           <FileText className="w-4 h-4" />
-          <span>Avis d'Appels d'Offres en Cours ({MARCHES_PUBLICS_DATA.length})</span>
+          <span>Avis d'Appels d'Offres en Cours ({sourceMarches.length})</span>
         </button>
 
         <button
@@ -412,7 +423,7 @@ export function MarchesPublicsSection({ formatXAF = (v) => `${(v || 0).toLocaleS
           }`}
         >
           <Award className="w-4 h-4" />
-          <span>Résultats & Marchés Attribués ({ATTRIBUTIONS_RECENTES.length})</span>
+          <span>Résultats & Marchés Attribués ({sourceAttributions.length})</span>
         </button>
 
         <button
@@ -672,18 +683,18 @@ export function MarchesPublicsSection({ formatXAF = (v) => `${(v || 0).toLocaleS
 
             <div className="flex flex-col sm:flex-row items-center gap-3 shrink-0">
               <a 
-                href="mailto:contact@opn-gabon.com?subject=Demande d'éclaircissement Marché Public OPN"
+                href={`mailto:${hotlineEmail}?subject=Demande d'éclaircissement Marché Public OPN`}
                 className="px-4 py-2.5 rounded-lg bg-[#2E68B4] hover:bg-[#215091] text-white text-xs font-bold transition-all flex items-center gap-2"
               >
                 <Mail className="w-4 h-4" />
                 <span>Écrire à la DMP</span>
               </a>
               <a 
-                href="tel:+24101765507"
+                href={`tel:${hotlineHref}`}
                 className="px-4 py-2.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-all border border-white/20 flex items-center gap-2"
               >
                 <Phone className="w-4 h-4 text-emerald-400" />
-                <span>+241 01 76 55 07</span>
+                <span>{hotlineTel}</span>
               </a>
             </div>
           </div>
@@ -722,7 +733,7 @@ export function MarchesPublicsSection({ formatXAF = (v) => `${(v || 0).toLocaleS
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {ATTRIBUTIONS_RECENTES.map((att, idx) => (
+                  {sourceAttributions.map((att, idx) => (
                     <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-3.5 px-4 font-mono font-bold text-slate-800">
                         {att.ref}

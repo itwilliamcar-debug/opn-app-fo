@@ -43,7 +43,7 @@ export default function OnlineColleaguesPanel({
       setColleagues(res.colleagues || []);
       setVille(res.ville || currentUser?.ville || currentUser?.entite || '');
     } catch (err) {
-      setError(err?.message || 'Impossible de charger les collègues en ligne.');
+      setError(err?.backendUnavailable ? '' : (err?.message || 'Impossible de charger les collègues en ligne.'));
       setColleagues([]);
     } finally {
       setLoading(false);
@@ -79,7 +79,7 @@ export default function OnlineColleaguesPanel({
       setSuccessMsg(`Note envoyée à ${selected.nom || selected.name}.`);
       setNote('');
     } catch (err) {
-      setError(err?.message || 'Envoi de la note impossible.');
+      setError(err?.backendUnavailable ? '' : (err?.message || 'Envoi de la note impossible.'));
     } finally {
       setSending(false);
     }
@@ -97,7 +97,7 @@ export default function OnlineColleaguesPanel({
       setSuccessMsg(`Fichier « ${file.name} » envoyé à ${selected.nom || selected.name}.`);
       setNote('');
     } catch (err) {
-      setError(err?.message || 'Envoi du fichier impossible.');
+      setError(err?.backendUnavailable ? '' : (err?.message || 'Envoi du fichier impossible.'));
     } finally {
       setSending(false);
     }

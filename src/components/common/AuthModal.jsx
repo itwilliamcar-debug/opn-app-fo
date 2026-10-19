@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { 
   Lock, 
   ShieldCheck, 
@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { loginUser, verify2FA } from '../../services/api';
 import { ensureSanctumSessionForPersona, isRealSanctumToken } from '../../services/sanctumSession';
-import { PROFILS_DEFAUT, USERS_PERSONAS } from '../../data/usersPersonas';
+import { PROFILS_DEFAUT, USERS_PERSONAS, grouperProfilsDefaut } from '../../data/usersPersonas';
 
 export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPersona }) {
   const [email, setEmail] = useState(currentPersona?.email || 'jb.obame@opn.ga');
@@ -26,20 +26,35 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
   const [successMessage, setSuccessMessage] = useState('');
   const connectSeqRef = useRef(0);
 
-  const mergePersonaWithApiUser = (persona, apiUser = {}) => ({
-    ...persona,
-    ...apiUser,
-    nom: persona.nom || apiUser.nom || apiUser.name,
-    role: persona.role || apiUser.role,
-    codeRole: persona.codeRole || apiUser.code_role || apiUser.codeRole,
-    provinceId: persona.provinceId || apiUser.provinceId,
-    antenneId: apiUser.province_id || apiUser.provinceId || apiUser.antenne_id,
-    antenne_id: apiUser.province_id || apiUser.antenne_id,
-    structureId: apiUser.structure_id || apiUser.structureId,
-    structure_id: apiUser.structure_id || apiUser.structureId,
-    email: persona.email || apiUser.email,
-    avatar: persona.avatar,
-  });
+  useEffect(() => {
+    if (isOpen) return;
+    setRequires2FA(false);
+    setFormLoading(false);
+    setErrorMessage('');
+    setSuccessMessage('');
+    setOtpCode('');
+  }, [isOpen]);
+
+  const mergePersonaWithApiUser = (persona, apiUser = {}) => {
+    const antenneNum = apiUser.antenne_id || apiUser.antenneId || apiUser.province_id || null;
+    return {
+      ...persona,
+      ...apiUser,
+      nom: persona.nom || apiUser.nom || apiUser.name,
+      name: apiUser.name || persona.nom,
+      role: persona.role || apiUser.role,
+      codeRole: persona.codeRole || apiUser.code_role || apiUser.codeRole,
+      provinceId: persona.provinceId || apiUser.provinceId,
+      province_id: antenneNum || apiUser.province_id,
+      antenneId: antenneNum,
+      antenne_id: antenneNum,
+      structureId: apiUser.structure_id || apiUser.structureId,
+      structure_id: apiUser.structure_id || apiUser.structureId,
+      email: persona.email || apiUser.email,
+      avatar: persona.avatar,
+      habilitations: apiUser.habilitations || persona.habilitations,
+    };
+  };
 
   if (!isOpen) return null;
 
@@ -50,9 +65,45 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
     setSuccessMessage('');
 
     try {
+      connectSeqRef.current += 1;
+      setConnectingPersonaId(null);
       const res = await loginUser(email, password);
 
-      if (res.requires_2fa) {
+      if (res?.skipped) {
+        setFormLoading(false);
+        return;
+      }
+      if (res?.backendUnavailable) {
+        setFormLoading(false);
+        setSuccessMessage('');
+        return;
+      }
+      if (res.requires_2fa && res.dev_otp_hint) {
+        const verified = await verify2FA(email, String(res.dev_otp_hint));
+        setFormLoading(false);
+        if (verified?.skipped) return;
+        if (verified?.backendUnavailable) {
+          setSuccessMessage('');
+          return;
+        }
+        if (verified?.token && isRealSanctumToken(verified.token)) {
+          setSuccessMessage('Connexion réussie ! Session Sanctum active.');
+          const matched = USERS_PERSONAS.find(p => p.email === email) || {
+            id: 'USER-OPN',
+            nom: verified.user?.nom || email.split('@')[0],
+            email,
+            role: 'Agent Métier OPN',
+            codeRole: 'AGENT',
+            initiales: 'OPN',
+          };
+          onAuthSuccess(mergePersonaWithApiUser(matched, verified.user), verified.token);
+          onClose();
+          return;
+        }
+        setRequires2FA(true);
+        setOtpHint(String(res.dev_otp_hint));
+        setErrorMessage(verified?.message || 'Code de sécurité refusé.');
+      } else if (res.requires_2fa) {
         setFormLoading(false);
         setRequires2FA(true);
         setOtpHint(res.dev_otp_hint || '');
@@ -81,13 +132,15 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
           onAuthSuccess(mergePersonaWithApiUser(persona, session.user), session.token);
           onClose();
         } else {
-          setErrorMessage(session.message || res.message || 'Identifiants invalides ou API indisponible.');
+          if (!session.backendUnavailable) {
+            setErrorMessage(session.message || res.message || 'Identifiants invalides ou session impossible.');
+          }
           setSuccessMessage('');
         }
       }
     } catch (err) {
       setFormLoading(false);
-      setErrorMessage(err?.message || 'Erreur de connexion à l’API Laravel.');
+      if (!err?.backendUnavailable) setErrorMessage(err?.message || 'Erreur de connexion.');
     }
   };
 
@@ -123,7 +176,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
     setSuccessMessage(`Connexion — ${persona.nom}`);
     try {
       const session = await ensureSanctumSessionForPersona(persona, { forceNew: true, preferQuick: true });
-      if (seq !== connectSeqRef.current) return;
+      if (session?.skipped || seq !== connectSeqRef.current) return;
       setConnectingPersonaId(null);
       if (session.requires_2fa) {
         setEmail(persona.email);
@@ -137,15 +190,63 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
         onAuthSuccess(mergePersonaWithApiUser(persona, session.user), session.token);
         onClose();
       } else {
-        setErrorMessage(session.message || 'Impossible d’activer Sanctum. Lancez npm run start:opn.');
+        if (!session.backendUnavailable) {
+          setErrorMessage(session.message || 'Impossible d’ouvrir la session.');
+        }
         setSuccessMessage('');
       }
     } catch (err) {
       if (seq !== connectSeqRef.current) return;
       setConnectingPersonaId(null);
       setSuccessMessage('');
-      setErrorMessage(err?.message || 'API Laravel injoignable (127.0.0.1:8002).');
+      if (!err?.backendUnavailable) setErrorMessage(err?.message || 'Connexion impossible.');
     }
+  };
+
+  const { nationaux, paires } = grouperProfilsDefaut(PROFILS_DEFAUT);
+
+  const boutonProfil = (p, compact = false) => {
+    if (!p) return null;
+    const isConnecting = connectingPersonaId === p.id;
+    const accent = p.accentColor || '#2E68B4';
+    return (
+      <button
+        key={p.id}
+        type="button"
+        onClick={() => handleInstantPersonaLogin(p)}
+        style={{ borderLeftColor: accent, borderLeftWidth: 4 }}
+        className={`w-full p-2.5 rounded bg-white border text-left transition-all flex items-center justify-between gap-2 shadow-xs ${
+          isConnecting
+            ? 'border-[#00A651] ring-1 ring-[#00A651]/40'
+            : 'border-slate-200 hover:border-slate-300'
+        }`}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <div className={`${compact ? 'w-7 h-7 text-[9px]' : 'w-8 h-8 text-[10px]'} rounded-full ${p.badgeColor || 'bg-slate-500'} text-white font-black flex items-center justify-center shrink-0 border border-white shadow-sm`}>
+            {p.initiales || 'OPN'}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className={`font-bold text-slate-900 leading-snug ${compact ? 'text-[11px]' : 'text-xs'}`}>{p.nom}</p>
+            <p className={`font-semibold leading-snug ${compact ? 'text-[9px]' : 'text-[10px]'}`} style={{ color: accent }}>{p.role}</p>
+          </div>
+        </div>
+        <span
+          className={`px-2 py-1 text-[10px] font-bold rounded shrink-0 transition-colors shadow-xs inline-flex items-center gap-1 text-white ${
+            isConnecting ? 'bg-emerald-600' : ''
+          }`}
+          style={isConnecting ? undefined : { backgroundColor: accent }}
+        >
+          {isConnecting ? (
+            <>
+              <Loader2 className="w-3 h-3 animate-spin" />
+              …
+            </>
+          ) : (
+            'Ouvrir'
+          )}
+        </span>
+      </button>
+    );
   };
 
   const personaList = (
@@ -156,57 +257,36 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
       <p className="text-[11px] text-slate-500 mt-1 mb-3">
         Ouvrez une session de démonstration sans saisir les identifiants.
       </p>
-      <div className="space-y-2 overflow-y-auto max-h-[52vh] pr-1">
-        {PROFILS_DEFAUT.map((p) => {
-          const isConnecting = connectingPersonaId === p.id;
-          return (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => handleInstantPersonaLogin(p)}
-              className={`w-full p-2.5 rounded bg-white border text-left transition-all flex items-center justify-between gap-2 shadow-xs ${
-                isConnecting
-                  ? 'border-[#00A651] ring-1 ring-[#00A651]/40'
-                  : 'border-slate-200 hover:border-[#2E68B4]'
-              }`}
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <img
-                  src={p.avatar}
-                  alt=""
-                  className="w-8 h-8 rounded-full object-cover border border-slate-200 shrink-0"
-                />
-                <div className="min-w-0">
-                  <p className="font-bold text-xs text-slate-900 truncate">{p.nom}</p>
-                  <p className="text-[10px] text-[#2E68B4] font-semibold truncate">{p.role}</p>
+      <div className="space-y-3 overflow-y-auto max-h-[52vh] pr-1">
+        <div className="space-y-2">
+          {nationaux.map((p) => boutonProfil(p))}
+        </div>
+
+        {paires.length > 0 && (
+          <div className="space-y-2 pt-1 border-t border-slate-200">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 pt-2">
+              9 antennes — Chef et Demandeur côte à côte
+            </p>
+            {paires.map((paire) => (
+              <div key={paire.id} className="rounded-md border border-slate-200 bg-white/70 p-2 space-y-1.5">
+                <p className="text-[10px] font-black uppercase tracking-wide text-slate-600 px-0.5">
+                  {paire.nom}
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {boutonProfil(paire.chef, true)}
+                  {boutonProfil(paire.demandeur, true)}
                 </div>
               </div>
-              <span
-                className={`px-2 py-1 text-[10px] font-bold rounded shrink-0 transition-colors shadow-xs inline-flex items-center gap-1 ${
-                  isConnecting
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-[#2E68B4] hover:bg-[#215091] text-white'
-                }`}
-              >
-                {isConnecting ? (
-                  <>
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    …
-                  </>
-                ) : (
-                  'Ouvrir'
-                )}
-              </span>
-            </button>
-          );
-        })}
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
 
   return (
-    <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-start justify-center px-4 pt-32 pb-8 overflow-y-auto animate-in fade-in duration-200">
-      <div className={`w-full ${requires2FA ? 'max-w-xl' : 'max-w-5xl'} bg-white border border-slate-200 rounded-lg shadow-2xl relative flex flex-col max-h-[calc(100vh-10rem)]`}>
+    <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-start justify-center px-3 sm:px-4 pt-24 sm:pt-28 pb-8 overflow-y-auto animate-in fade-in duration-200">
+      <div className={`w-full ${requires2FA ? 'max-w-xl' : 'max-w-7xl'} bg-white border border-slate-200 rounded-lg shadow-2xl relative flex flex-col max-h-[calc(100vh-8rem)]`}>
         <div className="flex items-start gap-3 px-6 sm:px-7 pt-5 pb-4 shrink-0 border-b border-slate-100">
           <div className="flex-1 text-center space-y-1.5 pl-8">
             <div className="w-11 h-11 rounded-lg bg-emerald-50 border border-emerald-200 text-[#00A651] flex items-center justify-center mx-auto shadow-sm">
@@ -215,7 +295,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
             <h3 className="text-lg font-bold text-slate-900">
               {requires2FA ? 'Vérification 2FA' : 'Connexion Espace Métier (ERP OPN)'}
             </h3>
-            <p className="text-xs text-slate-600 max-w-sm mx-auto">
+            <p className="text-xs text-slate-600 max-w-2xl mx-auto">
               {requires2FA
                 ? 'Saisissez le code de sécurité temporaire reçu par SMS ou token.'
                 : 'Accès sécurisé pour la Direction Générale, les Approvisionnements et les 9 Antennes Provinciales.'}
@@ -248,8 +328,8 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
         )}
 
         {!requires2FA ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
-          <form onSubmit={handleLoginSubmit} className="space-y-3.5 text-xs">
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(220px,260px)_minmax(0,1fr)] gap-5 items-start">
+          <form onSubmit={handleLoginSubmit} className="space-y-3 text-xs w-full max-w-[260px]">
             <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
               Connexion personnalisée
             </span>
@@ -257,14 +337,14 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
             <div>
               <label className="block font-bold text-slate-800 mb-1">Identifiant ou email professionnel</label>
               <div className="relative">
-                <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Mail className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="nom@opn.ga"
-                  className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-md text-slate-900 bg-white focus:outline-none focus:border-[#2E68B4]"
+                  className="w-full pl-8 pr-2 py-1.5 text-[11px] border border-slate-300 rounded-md text-slate-900 bg-white focus:outline-none focus:border-[#2E68B4]"
                 />
               </div>
             </div>
@@ -272,13 +352,13 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
             <div>
               <label className="block font-bold text-slate-800 mb-1">Mot de passe</label>
               <div className="relative">
-                <KeyRound className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <KeyRound className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-md text-slate-900 bg-white focus:outline-none focus:border-[#2E68B4]"
+                  className="w-full pl-8 pr-2 py-1.5 text-[11px] border border-slate-300 rounded-md text-slate-900 bg-white focus:outline-none focus:border-[#2E68B4]"
                 />
               </div>
             </div>
@@ -286,14 +366,14 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
             <button
               type="submit"
               disabled={formLoading}
-              className="w-full py-2.5 px-4 rounded-md bg-[#00A651] hover:bg-[#008742] text-white font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-2 mt-2 disabled:opacity-70"
+              className="w-full py-2 px-3 rounded-md bg-[#00A651] hover:bg-[#008742] text-white font-bold text-[11px] shadow-sm transition-all flex items-center justify-center gap-1.5 mt-1 disabled:opacity-70"
             >
               {formLoading ? (
-                <span>Vérification des accès...</span>
+                <span>Vérification...</span>
               ) : (
                 <>
                   <span>Se Connecter à l&apos;ERP</span>
-                  <ArrowRight className="w-4 h-4" />
+                  <ArrowRight className="w-3.5 h-3.5" />
                 </>
               )}
             </button>

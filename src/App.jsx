@@ -43,6 +43,7 @@ import OpnSpotlightModal from './components/common/OpnSpotlightModal';
 import GuidedDemoTourModal, { DEMO_SCENARIOS } from './components/common/GuidedDemoTourModal';
 import PlaquetteCommercialeModal from './components/common/PlaquetteCommercialeModal';
 import AppToast from './components/common/AppToast';
+import ToastHost from './components/common/ToastHost';
 import { USERS_PERSONAS } from './data/usersPersonas';
 import { subscribeToRealtimeEvents, setAuthToken, getAuthToken, apiRequest } from './services/api';
 import { ensureSanctumSessionForPersona, isRealSanctumToken } from './services/sanctumSession';
@@ -105,6 +106,7 @@ export default function App() {
   const [helpdeskModalOpen, setHelpdeskModalOpen] = useState(false);
   const [colleaguesOpen, setColleaguesOpen] = useState(false);
   const [realtimeNotification, setRealtimeNotification] = useState(null);
+  const [backendToast, setBackendToast] = useState(null);
   const [helpdeskTickets, setHelpdeskTickets] = useState([]);
   const [sanctumReady, setSanctumReady] = useState(() => Boolean(sessionDepart));
   const [repriseSession, setRepriseSession] = useState(() => {
@@ -230,6 +232,20 @@ export default function App() {
   }, [sanctumReady]);
 
   useEffect(() => {
+    let timer = 0;
+    const onBackend = (event) => {
+      setBackendToast(event.detail?.message || 'Le serveur ne répond pas pour le moment.');
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setBackendToast(null), 5000);
+    };
+    window.addEventListener('opn:backend-down', onBackend);
+    return () => {
+      window.removeEventListener('opn:backend-down', onBackend);
+      window.clearTimeout(timer);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!currentUser || !sanctumReady || !isRealSanctumToken(getAuthToken())) {
       return undefined;
     }
@@ -261,14 +277,14 @@ export default function App() {
       const res = await ensureSanctumSessionForPersona(persona, { preferQuick: true });
       const ok = Boolean(res?.success && isRealSanctumToken(res.token || getAuthToken()));
       setSanctumReady(ok);
-      if (!ok) {
+      if (!ok && !res?.backendUnavailable) {
         console.warn('Sanctum non activé:', res?.message);
       }
-      return ok;
+      return { ok, backendUnavailable: Boolean(res?.backendUnavailable) };
     } catch (err) {
       console.warn('Erreur session Sanctum:', err);
       setSanctumReady(false);
-      return false;
+      return { ok: false, backendUnavailable: Boolean(err?.backendUnavailable) };
     } finally {
       setSanctumBusy(false);
     }
@@ -282,13 +298,16 @@ export default function App() {
       return false;
     }
     setRealtimeNotification(`Activation session API — ${persona.nom}…`);
-    const ok = await activateSanctumForPersona(persona);
-    setRealtimeNotification(
-      ok
-        ? `Session Sanctum active — ${persona.nom}`
-        : 'Échec Sanctum — vérifiez que l’API tourne (127.0.0.1:8002) puis réessayez.'
-    );
-    setTimeout(() => setRealtimeNotification(null), 4500);
+    const { ok, backendUnavailable } = await activateSanctumForPersona(persona);
+    if (ok) {
+      setRealtimeNotification(`Session Sanctum active — ${persona.nom}`);
+      setTimeout(() => setRealtimeNotification(null), 4500);
+    } else if (backendUnavailable) {
+      setRealtimeNotification(null);
+    } else {
+      setRealtimeNotification('Impossible d’ouvrir la session. Réessayez.');
+      setTimeout(() => setRealtimeNotification(null), 4500);
+    }
     if (!ok) setAuthModalOpen(true);
     return ok;
   };
@@ -312,8 +331,8 @@ export default function App() {
       markTokenRefreshed();
       setSanctumReady(true);
     } else {
-      const ok = await activateSanctumForPersona(authenticatedUser);
-      if (!ok) {
+      const { ok, backendUnavailable } = await activateSanctumForPersona(authenticatedUser);
+      if (!ok && !backendUnavailable) {
         setRealtimeNotification(
           'Profil ouvert sans API — cliquez « Activer session » ou Accès Intranet.'
         );
@@ -352,14 +371,21 @@ export default function App() {
           },
           res.token
         );
-      } else {
-        setRealtimeNotification(res?.message || 'Connexion API impossible.');
+      } else if (!res?.backendUnavailable) {
+        setRealtimeNotification(res?.message || 'Connexion impossible.');
         setTimeout(() => setRealtimeNotification(null), 5000);
+        setAuthModalOpen(true);
+      } else {
+        setRealtimeNotification(null);
         setAuthModalOpen(true);
       }
     } catch (err) {
-      setRealtimeNotification(err?.message || 'API Laravel injoignable.');
-      setTimeout(() => setRealtimeNotification(null), 5000);
+      if (!err?.backendUnavailable) {
+        setRealtimeNotification(err?.message || 'Connexion impossible.');
+        setTimeout(() => setRealtimeNotification(null), 5000);
+      } else {
+        setRealtimeNotification(null);
+      }
       setAuthModalOpen(true);
     } finally {
       setDemoConnectingId(null);
@@ -772,7 +798,9 @@ export default function App() {
   if (currentView === 'public' || currentView === 'direction_home' || currentView === 'direction_modules' || currentView === 'direction_dashboard') {
     return (
       <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] flex flex-col font-sans">
-        <AppToast message={realtimeNotification} onClose={() => setRealtimeNotification(null)} />
+        <ToastHost />
+        <AppToast message={backendToast} tone="error" onClose={() => setBackendToast(null)} />
+        <AppToast message={realtimeNotification} className={backendToast ? 'top-24' : ''} onClose={() => setRealtimeNotification(null)} />
 
         {currentView === 'public' && <Header {...headerProps} />}
 
@@ -883,7 +911,9 @@ export default function App() {
 
   return (
     <div className="h-screen overflow-hidden bg-[#F4F5F7] text-[#0F172A] flex flex-col font-sans relative">
-      <AppToast message={realtimeNotification} onClose={() => setRealtimeNotification(null)} />
+      <ToastHost />
+      <AppToast message={backendToast} tone="error" onClose={() => setBackendToast(null)} />
+      <AppToast message={realtimeNotification} className={backendToast ? 'top-24' : ''} onClose={() => setRealtimeNotification(null)} />
 
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {sidebarMode !== 'hidden' && (

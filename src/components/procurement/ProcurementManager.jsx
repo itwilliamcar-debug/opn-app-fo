@@ -49,7 +49,7 @@ export default function ProcurementManager({ activePersona, sanctumReady = false
       setSuppliers([]);
       setOrders([]);
       setSelectedOrder(null);
-      setActionError(err?.message || 'API Achats injoignable (Sanctum requis).');
+      setActionError(err?.backendUnavailable ? '' : (err?.message || 'Achats indisponibles.'));
     } finally {
       setLoading(false);
     }
@@ -77,7 +77,7 @@ export default function ProcurementManager({ activePersona, sanctumReady = false
       setTimeout(() => setActionSuccess(null), 3000);
       await loadData();
     } catch (err) {
-      setActionError(err?.message || `Echec validation ${etape} — aucune transition locale.`);
+      setActionError(err?.backendUnavailable ? '' : (err?.message || `Échec de la validation ${etape}.`));
     } finally {
       setSubmitting(false);
     }
@@ -112,7 +112,7 @@ export default function ProcurementManager({ activePersona, sanctumReady = false
       setTimeout(() => setActionSuccess(null), 3000);
       await loadData();
     } catch (err) {
-      setActionError(err?.message || 'Echec creation commande fournisseur.');
+      setActionError(err?.backendUnavailable ? '' : (err?.message || 'Échec de création de la commande.'));
     } finally {
       setSubmitting(false);
     }

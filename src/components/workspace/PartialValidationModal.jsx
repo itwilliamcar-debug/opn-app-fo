@@ -104,7 +104,7 @@ export default function PartialValidationModal({
       }
     } catch (err) {
       setSubmitting(false);
-      setErrorMessage(err?.message || 'Erreur API — signature electronique non enregistree.');
+      setErrorMessage(err?.backendUnavailable ? '' : (err?.message || 'Signature non enregistrée.'));
     }
   };
 

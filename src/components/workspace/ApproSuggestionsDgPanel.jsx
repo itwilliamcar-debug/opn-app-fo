@@ -54,7 +54,7 @@ export default function ApproSuggestionsDgPanel({
       const res = await fetchSuggestionsDg(isDg ? { inbox: '1' } : {});
       setItems(res.suggestions || []);
     } catch (err) {
-      onFlash?.(err.message || 'Erreur suggestions DG');
+      if (!err?.backendUnavailable) onFlash?.(err.message || 'Erreur suggestions DG');
     } finally {
       setLoading(false);
     }
@@ -70,7 +70,7 @@ export default function ApproSuggestionsDgPanel({
       setSelected(res.suggestion);
       setEditContenu(res.suggestion?.contenu || '');
     } catch (err) {
-      onFlash?.(err.message);
+      if (err?.message && !err.backendUnavailable) onFlash(err.message);
     }
   };
 
@@ -82,7 +82,7 @@ export default function ApproSuggestionsDgPanel({
       await load();
       if (selected?.id) await openDetail(selected.id);
     } catch (err) {
-      onFlash?.(err.message || 'Échec');
+      if (!err?.backendUnavailable) onFlash?.(err.message || 'Échec');
     } finally {
       setBusy(null);
     }

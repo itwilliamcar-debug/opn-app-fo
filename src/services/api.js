@@ -35,12 +35,90 @@ function getHeaders() {
 }
 
 export class ApiError extends Error {
-  constructor(message, { status = 0, data = null } = {}) {
+  constructor(message, { status = 0, data = null, backendUnavailable = false, skipped = false } = {}) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.data = data;
+    this.backendUnavailable = backendUnavailable;
+    this.skipped = skipped;
   }
+}
+
+/** Une seule connexion à la fois : les sondes en arrière-plan libèrent le serveur. */
+let loginHold = 0;
+let authGeneration = 0;
+let authController = null;
+const backgroundControllers = new Set();
+
+function pauseBackgroundForLogin() {
+  loginHold += 1;
+  if (loginHold !== 1) return;
+  for (const controller of backgroundControllers) {
+    try { controller.abort(); } catch { /* déjà clos */ }
+  }
+  backgroundControllers.clear();
+}
+
+function resumeBackgroundAfterLogin() {
+  loginHold = Math.max(0, loginHold - 1);
+}
+
+async function withLoginPriority(run) {
+  pauseBackgroundForLogin();
+  try {
+    return await run();
+  } finally {
+    resumeBackgroundAfterLogin();
+  }
+}
+
+function armAuthSignal(timeoutMs) {
+  const generation = ++authGeneration;
+  if (authController) authController.abort();
+  const controller = new AbortController();
+  authController = controller;
+  const timer = setTimeout(() => {
+    if (generation === authGeneration) controller.abort();
+  }, timeoutMs);
+  return { controller, generation, timer };
+}
+
+/** Réserve un fetch d’arrière-plan, annulé dès qu’une connexion démarre. */
+export function openBackgroundSlot() {
+  if (loginHold > 0) return null;
+  const controller = new AbortController();
+  backgroundControllers.add(controller);
+  return {
+    signal: controller.signal,
+    abort() { controller.abort(); },
+    release() { backgroundControllers.delete(controller); },
+  };
+}
+
+const BACKEND_TOAST = 'Le serveur ne répond pas pour le moment.';
+let lastBackendNotice = 0;
+
+/** Toast unique : problème de serveur, sans adresse ni détail technique. */
+export function notifyBackendDown() {
+  const now = Date.now();
+  if (now - lastBackendNotice < 15000) return;
+  lastBackendNotice = now;
+  window.dispatchEvent(new CustomEvent('opn:backend-down', {
+    detail: { message: BACKEND_TOAST },
+  }));
+}
+
+function isTransportError(error) {
+  if (!error) return false;
+  if (error.name === 'AbortError') return true;
+  return /Failed to fetch|NetworkError|ECONNREFUSED|Load failed|network/i.test(String(error.message || ''));
+}
+
+/** Texte de bandeau. Vide si le problème est déjà signalé par la toast. */
+export function inlineApiMessage(error, fallback = '') {
+  if (error?.backendUnavailable) return '';
+  return error?.message || fallback;
 }
 
 /**
@@ -49,8 +127,13 @@ export class ApiError extends Error {
  */
 export async function apiRequest(path, options = {}) {
   const timeoutMs = options.timeoutMs ?? 10000;
-  const { timeoutMs: _t, ...fetchOptions } = options;
+  const priority = options.priority === true;
+  const { timeoutMs: _t, priority: _p, ...fetchOptions } = options;
+  if (loginHold > 0 && !priority) {
+    throw new ApiError('', { status: 0, skipped: true });
+  }
   const controller = new AbortController();
+  if (!priority) backgroundControllers.add(controller);
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   let response;
@@ -64,15 +147,17 @@ export async function apiRequest(path, options = {}) {
       },
     });
   } catch (error) {
-    const aborted = error?.name === 'AbortError';
-    throw new ApiError(
-      aborted
-        ? 'API Laravel trop lente ou saturée (127.0.0.1:8002). Vérifiez que php artisan serve tourne et qu’un seul processus écoute le port.'
-        : (error?.message || 'API Laravel injoignable (127.0.0.1:8002).'),
-      { status: 0 }
-    );
+    if (error?.name === 'AbortError' && loginHold > 0) {
+      throw new ApiError('', { status: 0, skipped: true });
+    }
+    if (isTransportError(error)) {
+      notifyBackendDown();
+      throw new ApiError('', { status: 0, backendUnavailable: true });
+    }
+    throw new ApiError(error?.message || 'Erreur de communication avec le serveur.', { status: 0 });
   } finally {
     clearTimeout(timer);
+    backgroundControllers.delete(controller);
   }
 
   const data = await response.json().catch(() => ({}));
@@ -91,43 +176,55 @@ export async function apiRequest(path, options = {}) {
     });
   }
 
+  lastBackendNotice = 0;
   return data;
 }
 
 /**
  * Authentification Utilisateur (Sanctum)
  */
-export async function loginUser(email, password) {
+async function postAuth(path, body, timeoutMs, headers) {
+  const { controller, generation, timer } = armAuthSignal(timeoutMs);
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 12000);
-    let response;
-    try {
-      response = await fetch(`${API_BASE_URL}/auth/login`, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({ email, password }),
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
     const data = await response.json().catch(() => ({}));
-    if (data.token) {
-      setAuthToken(data.token);
-    }
+    if (generation !== authGeneration) return { success: false, skipped: true };
+    if (data.token) setAuthToken(data.token);
     if (!response.ok && !data.message) {
-      return { success: false, message: `Erreur login (${response.status})` };
+      return { success: false, message: `Erreur (${response.status})` };
     }
     return data;
   } catch (error) {
-    const aborted = error?.name === 'AbortError';
-    const message = aborted
-      ? 'Connexion trop lente : API saturée. Lancez npm run start:opn puis réessayez.'
-      : (error.message || 'API Laravel injoignable (127.0.0.1:8002).');
-    console.warn('Erreur connexion API Laravel:', message);
-    return { success: false, message };
+    if (generation !== authGeneration) return { success: false, skipped: true };
+    throw error;
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+export async function loginUser(email, password) {
+  return withLoginPriority(async () => {
+    const headers = getHeaders();
+    try {
+      return await postAuth('/auth/login', { email, password }, 20000, headers);
+    } catch (error) {
+      if (!isTransportError(error)) {
+        return { success: false, message: error.message || 'Connexion impossible.' };
+      }
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        return await postAuth('/auth/login', { email, password }, 20000, headers);
+      } catch {
+        notifyBackendDown();
+        return { success: false, backendUnavailable: true, message: '' };
+      }
+    }
+  });
 }
 
 /**
@@ -138,80 +235,43 @@ export async function loginUser(email, password) {
  * 1 retry automatique si l’API démarre encore / worker froid.
  */
 export async function demoQuickLogin(email) {
-  const attempt = async (timeoutMs) => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return withLoginPriority(async () => {
+    const headers = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    };
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/demo-quick`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({ email }),
-        signal: controller.signal,
-      });
-      const data = await response.json().catch(() => ({}));
-      if (data.token) {
-        setAuthToken(data.token);
+      return await postAuth('/auth/demo-quick', { email }, 20000, headers);
+    } catch (error) {
+      if (!isTransportError(error)) {
+        return { success: false, message: error?.message || 'Connexion impossible.' };
       }
-      if (!response.ok && !data.message) {
-        return { success: false, message: `Erreur demo-quick (${response.status})` };
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        return await postAuth('/auth/demo-quick', { email }, 20000, headers);
+      } catch {
+        notifyBackendDown();
+        return { success: false, backendUnavailable: true, message: '' };
       }
-      return data;
-    } finally {
-      clearTimeout(timer);
     }
-  };
-
-  try {
-    let res = await attempt(12000);
-    if (res?.token) return res;
-    // Proxy 502 / workers pas prêts → une seconde chance
-    if (!res?.success) {
-      await new Promise((r) => setTimeout(r, 800));
-      res = await attempt(20000);
-    }
-    return res;
-  } catch (error) {
-    try {
-      await new Promise((r) => setTimeout(r, 1000));
-      return await attempt(20000);
-    } catch (error2) {
-      const aborted = error2?.name === 'AbortError' || error?.name === 'AbortError';
-      const offline =
-        /Failed to fetch|NetworkError|ECONNREFUSED|injoignable/i.test(
-          String(error2?.message || error?.message || '')
-        );
-      return {
-        success: false,
-        message: aborted || offline
-          ? 'API trop lente ou arrêtée. Lancez npm run start:opn puis réessayez.'
-          : (error2?.message || error?.message || 'API Laravel injoignable (127.0.0.1:8002).'),
-      };
-    }
-  }
+  });
 }
 
 /**
  * Validation Code 2FA
  */
 export async function verify2FA(email, code) {
-  try {
-    const response = await fetch(`${API_BASE_URL}/auth/verify-2fa`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify({ email, code })
-    });
-    const data = await response.json();
-    if (data.token) {
-      setAuthToken(data.token);
+  return withLoginPriority(async () => {
+    try {
+      return await postAuth('/auth/verify-2fa', { email, code }, 20000, getHeaders());
+    } catch (error) {
+      if (isTransportError(error)) {
+        notifyBackendDown();
+        return { success: false, backendUnavailable: true, message: '' };
+      }
+      return { success: false, message: error.message || 'Vérification impossible.' };
     }
-    return data;
-  } catch (error) {
-    console.warn('Erreur 2FA:', error.message);
-    return { success: false, message: error.message };
-  }
+  });
 }
 
 /**
@@ -727,20 +787,21 @@ export function subscribeToRealtimeEvents(onEventCallback) {
     let inFlight = false;
 
     const tick = async () => {
-      if (stopped || inFlight) return;
+      if (stopped || inFlight || loginHold > 0) return;
       const token = getAuthToken();
       if (!token) return;
+      const slot = openBackgroundSlot();
+      if (!slot) return;
       inFlight = true;
+      const timer = setTimeout(() => slot.abort(), 8000);
       try {
         const headers = {
           Accept: 'application/json',
           Authorization: `Bearer ${token}`,
         };
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 8000);
         const res = await fetch(`${API_BASE_URL}/realtime/snapshot`, {
           headers,
-          signal: controller.signal,
+          signal: slot.signal,
         });
         clearTimeout(timer);
         const data = await res.json().catch(() => ({}));
@@ -764,15 +825,15 @@ export function subscribeToRealtimeEvents(onEventCallback) {
           lastEmergencyId = latest.id;
         }
       } catch (err) {
-        if (!stopped) {
+        if (!stopped && loginHold === 0 && err?.name !== 'AbortError') {
           onEventCallback({
             type: 'DISCONNECTED',
-            message: err?.name === 'AbortError'
-              ? 'API lente — snapshot temps réel ignoré.'
-              : (err?.message || 'API injoignable.'),
+            message: err?.message || 'API injoignable.',
           });
         }
       } finally {
+        clearTimeout(timer);
+        slot.release();
         inFlight = false;
       }
     };

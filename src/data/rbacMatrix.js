@@ -182,8 +182,9 @@ export const ROLE_MODULES = {
     { id: 'emergency', label: 'Alertes Sanitaires (COD)', badge: 'Médical', badgeColor: 'bg-rose-100 text-rose-800' },
     { id: 'collaborative', label: 'OPN Connect (Chat & Visio)', badge: 'Direct', badgeColor: 'bg-purple-100 text-purple-800' },
   ],
+  /** Sidebar identique pour les 9 chefs d'antenne (flux + services + modules métier, sans référentiel). */
   CHEF_ANTENNE_PROVINCIALE: [
-    { id: 'antenna', label: 'Commandes & Stocks Antenne', badge: 'Actif', badgeColor: 'bg-emerald-100 text-emerald-800' },
+    { id: 'antenna', label: 'Commandes & Stocks Antenne', badge: 'Antenne', badgeColor: 'bg-emerald-100 text-emerald-800' },
     { id: 'prospection', label: 'Prospection & Tiers (M2)', badge: 'Terrain', badgeColor: 'bg-emerald-100 text-emerald-800' },
     { id: 'inventory_waste', label: 'Inventaires & Avaries (M7)', badge: 'Gel Stock', badgeColor: 'bg-amber-100 text-amber-800' },
     { id: 'gross_margin', label: 'Marge Brute & Rapport Quotidien (M9)', badge: 'Paulette', badgeColor: 'bg-emerald-100 text-emerald-800' },
@@ -255,6 +256,17 @@ export const ROLE_MODULES = {
     { id: 'workspace', label: 'Mes Demandes & Réceptions', badge: 'Structure', badgeColor: 'bg-emerald-100 text-emerald-800' },
     { id: 'billing', label: 'Mes Factures OPN & Tiers-Payant', badge: 'Factures', badgeColor: 'bg-emerald-100 text-emerald-800' },
     { id: 'pharmacy', label: 'Catalogue Médicaments & Tarifs', badge: 'Plafonné', badgeColor: 'bg-teal-100 text-teal-800' },
+    { id: 'collaborative', label: 'OPN Connect (Chat & Visio)', badge: 'Direct', badgeColor: 'bg-purple-100 text-purple-800' },
+  ],
+  /** Force de vente terrain — options commerciales alimentées par le référentiel. */
+  VENDEUR: [
+    { id: 'prospection', label: 'Prospection & Tiers (M2)', badge: 'Terrain', badgeColor: 'bg-emerald-100 text-emerald-800' },
+    { id: 'billing', label: 'Facturation & Devis Clients', badge: 'Ventes', badgeColor: 'bg-emerald-100 text-emerald-800' },
+    { id: 'gross_margin', label: 'Marge Brute & Rapport Quotidien (M9)', badge: 'Paulette', badgeColor: 'bg-emerald-100 text-emerald-800' },
+    { id: 'debt_public', label: 'Recouvrement Public & Mandats (M5)', badge: 'Trésor', badgeColor: 'bg-purple-100 text-purple-800' },
+    { id: 'inventory_waste', label: 'Inventaires & Avaries (M7)', badge: 'Gel Stock', badgeColor: 'bg-amber-100 text-amber-800' },
+    { id: 'pharmacy', label: 'Catalogue & Tarifs Mercuriale', badge: 'SIMPEX', badgeColor: 'bg-teal-100 text-teal-800' },
+    { id: 'workspace', label: 'Suivi Commandes Clients', badge: 'Clients', badgeColor: 'bg-blue-100 text-blue-800' },
     { id: 'collaborative', label: 'OPN Connect (Chat & Visio)', badge: 'Direct', badgeColor: 'bg-purple-100 text-purple-800' },
   ],
   COMMUNICATION: [
@@ -339,6 +351,21 @@ export const ROLE_CAPABILITIES = {
     defaultView: 'workspace',
     hierarchyLabel: 'N1 — Origine du besoin (structure)',
   },
+  VENDEUR: {
+    createDemand: false,
+    validatePartialAntenna: false,
+    instructDemand: false,
+    validateNational: false,
+    transferAchats: false,
+    rejectAppro: false,
+    visaDir: false,
+    visaDaf: false,
+    visaDg: false,
+    superviseReadonly: false,
+    commercialTerrain: true,
+    defaultView: 'prospection',
+    hierarchyLabel: 'N2 — Force de vente terrain (commercial)',
+  },
   PHARMACIEN_CHEF_ANTENNE: {
     createDemand: false,
     validatePartialAntenna: false,
@@ -365,7 +392,7 @@ export const ROLE_CAPABILITIES = {
     visaDaf: false,
     visaDg: false,
     superviseReadonly: false,
-    defaultView: 'workspace',
+    defaultView: 'flux_appro',
     hierarchyLabel: 'N2 — Validation & envoi vers Appro national',
   },
   COLLABORATEUR_APPRO: {
@@ -632,7 +659,22 @@ export function getFluxStage(codeRole) {
 }
 
 /** Écrans déjà utilisables. Les autres restent visibles, avec l'étiquette de développement. */
-const MODULES_PRETS = new Set(['flux_appro', 'referentiel', 'patrimoine', 'centre_services', 'parametrage']);
+const MODULES_PRETS = new Set([
+  'flux_appro',
+  'referentiel',
+  'patrimoine',
+  'centre_services',
+  'parametrage',
+  /* Profil vendeur / modules commerciaux SICL */
+  'prospection',
+  'billing',
+  'gross_margin',
+  'debt_public',
+  'inventory_waste',
+  'pharmacy',
+  'collaborative',
+  'workspace',
+]);
 
 function avecEtiquette(item) {
   if (!item?.id || MODULES_PRETS.has(item.id)) return item;
@@ -640,7 +682,10 @@ function avecEtiquette(item) {
 }
 
 export function getRoleModules(codeRole) {
-  const workflow = [MODULE_FLUX, MODULE_REFERENTIEL];
+  // Chef d'antenne : pas de module Référentiel.
+  const workflow = codeRole === 'CHEF_ANTENNE_PROVINCIALE'
+    ? [MODULE_FLUX]
+    : [MODULE_FLUX, MODULE_REFERENTIEL];
   if (ROLES_PATRIMOINE.includes(codeRole)) {
     workflow.push(MODULE_PATRIMOINE);
   }
@@ -707,9 +752,18 @@ export const MODULES_DROITS = [
   ecran(ECRANS_ADMIN.inventory_waste, 'ACCESS_INVENTAIRES', 'inventaires'),
 ].filter((item) => item.id);
 
+/** Rôles dont la sidebar est fixe (même liste pour tous les comptes du rôle). */
+const ROLES_SIDEBAR_FIXE = new Set(['CHEF_ANTENNE_PROVINCIALE', 'VENDEUR']);
+
 export function getVisibleModules(user) {
   const codeRole = getCodeRole(user);
   const base = getRoleModules(codeRole);
+
+  // Les 9 chefs d'antenne ont exactement la même sidebar (16 modules), sans filtre matrice.
+  if (ROLES_SIDEBAR_FIXE.has(codeRole)) {
+    return base;
+  }
+
   const rows = Array.isArray(user?.habilitations) ? user.habilitations : [];
   const codes = new Set(
     rows
@@ -766,14 +820,29 @@ function libellePage(module, acces) {
  * Pages ouvertes par les habilitations du compte, avec les actions autorisées sur chacune.
  */
 export function pagesAutorisees(user) {
+  const codeRole = getCodeRole(user);
   const lignes = Array.isArray(user?.habilitations) ? user.habilitations : [];
-  if (!lignes.length) {
-    return getVisibleModules(user).map((module) => ({
-      id: module.id,
-      label: module.label,
-      badge: module.badge,
-      actions: ['Consulter'],
-    }));
+
+  // Même liste fixe que la sidebar pour les 9 chefs d'antenne.
+  if (ROLES_SIDEBAR_FIXE.has(codeRole) || !lignes.length) {
+    const parCode = new Map(lignes.map((ligne) => [ligne.code, ligne]));
+    return getVisibleModules(user).map((module) => {
+      const meta = MODULES_DROITS.find((item) => item.id === module.id);
+      const gestion = meta ? parCode.get(meta.gestion) : null;
+      const actions = ACTIONS_PAGE
+        .filter(([cle]) => {
+          if (!gestion) return cle === 'lire';
+          if (cle === 'lire') return true;
+          return Boolean(gestion[cle]);
+        })
+        .map(([, libelle]) => libelle);
+      return {
+        id: module.id,
+        label: module.label,
+        badge: module.badge,
+        actions: actions.length ? actions : ['Consulter'],
+      };
+    });
   }
 
   const parCode = new Map(lignes.map((ligne) => [ligne.code, ligne]));

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { 
   LayoutDashboard, 
   Pill, 
@@ -84,10 +84,15 @@ export default function Sidebar({
 }) {
   const user = currentUser || activePersona;
   const codeRole = getCodeRole(user);
+  const navRef = useRef(null);
   const menuItems = getVisibleModules(user).map((item) => ({
     ...item,
     label: (codeRole === 'DEMANDEUR_PHARMACIEN' || codeRole === 'DEMANDEUR_STRUCTURE') && item.id === 'flux_appro'
       ? 'Mes demandes'
+      : codeRole === 'VENDEUR' && item.id === 'flux_appro'
+      ? 'Suivi commandes clients'
+      : codeRole === 'VENDEUR' && item.id === 'referentiel'
+      ? 'Référentiel (catalogue & territoires)'
       : item.label,
     icon: codeRole === 'CONVOYEUR' && item.id === 'workspace'
       ? QrCode
@@ -97,6 +102,10 @@ export default function Sidebar({
       ? FileCheck
       : ICON_BY_MODULE[item.id] || Briefcase,
   }));
+
+  useEffect(() => {
+    if (navRef.current) navRef.current.scrollTop = 0;
+  }, [user?.email, user?.id, codeRole]);
 
   return (
     <aside className={`${collapsed ? 'w-[4.75rem]' : 'w-64'} bg-[#0E2A4F] border-r border-[#0A1F3C] flex flex-col shrink-0 h-full min-h-0 overflow-hidden shadow-sm transition-[width] duration-200`}>
@@ -156,12 +165,12 @@ export default function Sidebar({
         </div>
       )}
 
-      <nav className={`flex-1 min-h-0 overflow-y-auto space-y-1 ${collapsed ? 'p-2' : 'p-3'}`}>
+      <nav ref={navRef} className={`flex-1 min-h-0 overflow-y-auto space-y-1 ${collapsed ? 'p-2' : 'p-3'}`}>
           {!collapsed && (
-          <div className="px-3 py-1.5 text-[10px] font-bold text-blue-200/70 uppercase tracking-wider flex items-center justify-between">
+          <div className="px-3 py-1.5 text-[10px] font-bold text-blue-200/70 uppercase tracking-wider flex items-center justify-between gap-2">
             <span>Modules Autorisés</span>
-            <span className="text-[9px] font-mono bg-white/10 text-blue-100 px-1 py-0.5 rounded">
-              {user.scope || 'PROVINCE'}
+            <span className="text-[9px] font-mono bg-white/10 text-blue-100 px-1 py-0.5 rounded shrink-0">
+              {user.scope || 'PROVINCE'} · {menuItems.length}
             </span>
           </div>
           )}

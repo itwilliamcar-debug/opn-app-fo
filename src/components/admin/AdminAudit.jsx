@@ -40,6 +40,7 @@ import { USERS_PERSONAS } from '../../data/usersPersonas';
 import SpinnerPourcentage from '../common/SpinnerPourcentage';
 import { GABON_PROVINCES } from '../../data/gabonProvinces';
 import { fetchAuditLogs } from '../../services/api';
+import { askConfirm } from '../../services/toastBus';
 import { downloadCsv, downloadOfficialHtml } from '../../utils/downloadHelpers';
 import {
   loadAllIamUsers,
@@ -269,7 +270,7 @@ export default function AdminAudit({
       if (err?.status === 403) {
         setAuditError('Accès refusé journal audit');
       } else {
-        setAuditError(err?.message || "Impossible de charger le journal d'audit ANINF.");
+        setAuditError(err?.backendUnavailable ? '' : (err?.message || "Impossible de charger le journal d'audit."));
       }
     } finally {
       setAuditLoading(false);
@@ -461,8 +462,16 @@ export default function AdminAudit({
   };
 
   // 6. BASCULER STATUT (ACTIF / SUSPENDU)
-  const handleToggleUserStatus = (user) => {
+  const handleToggleUserStatus = async (user) => {
     const nextStatut = (user.statut || 'ACTIF') === 'ACTIF' ? 'SUSPENDU' : 'ACTIF';
+    const ok = await askConfirm({
+      message: nextStatut === 'SUSPENDU'
+        ? `Suspendre l'accès de ${user.nom} ? Le compte ne pourra plus se connecter.`
+        : `Réactiver l'accès de ${user.nom} ?`,
+      confirmLabel: nextStatut === 'SUSPENDU' ? 'Suspendre' : 'Réactiver',
+      tone: nextStatut === 'SUSPENDU' ? 'danger' : 'warning',
+    });
+    if (!ok) return;
     const updatedUser = { ...user, statut: nextStatut, updatedAt: new Date().toISOString() };
     const updatedList = usersList.map((u) => (u.id === user.id ? updatedUser : u));
     setUsersList(updatedList);
@@ -476,7 +485,13 @@ export default function AdminAudit({
   };
 
   // 7. RESET MOT DE PASSE PAR ADMIN
-  const handleResetPasswordByAdmin = (userId, userNom) => {
+  const handleResetPasswordByAdmin = async (userId, userNom) => {
+    const ok = await askConfirm({
+      message: `Réinitialiser le mot de passe de ${userNom} ?`,
+      confirmLabel: 'Réinitialiser',
+      tone: 'danger',
+    });
+    if (!ok) return;
     const tempPassword = `OPN-PASS-${Math.floor(100000 + Math.random() * 900000)}`;
     persistPasswordReset({ userId, userNom, tempPassword });
 
@@ -501,12 +516,16 @@ export default function AdminAudit({
   };
 
   // 8. RÉINITIALISER TOUT LE RÉPERTOIRE AUX VALEURS DÉFAUT
-  const handleResetToDefaultPersonas = () => {
-    if (window.confirm("Voulez-vous réinitialiser le répertoire aux 20 profils OPN initiaux certifiés ?")) {
-      saveAllIamUsers(USERS_PERSONAS);
-      setUsersList(USERS_PERSONAS);
-      showToast("Répertoire réinitialisé aux profils institutionnels certifiés.");
-    }
+  const handleResetToDefaultPersonas = async () => {
+    const ok = await askConfirm({
+      message: 'Réinitialiser le répertoire aux profils OPN initiaux certifiés ?',
+      confirmLabel: 'Réinitialiser',
+      tone: 'danger',
+    });
+    if (!ok) return;
+    saveAllIamUsers(USERS_PERSONAS);
+    setUsersList(USERS_PERSONAS);
+    showToast('Répertoire réinitialisé aux profils institutionnels certifiés.');
   };
 
   // 9. EXPORT ANNUAIRE CSV

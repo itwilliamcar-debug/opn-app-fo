@@ -123,7 +123,7 @@ export default function PharmacyStockManager({ activePersona, sanctumReady = fal
     } catch (err) {
       setProducts([]);
       setSelectedProductDetails(null);
-      setError(err?.message || 'Impossible de charger le catalogue pharmacie (API / Sanctum).');
+      setError(err?.backendUnavailable ? '' : (err?.message || 'Impossible de charger le catalogue pharmacie.'));
     } finally {
       setLoading(false);
     }
@@ -273,7 +273,7 @@ export default function PharmacyStockManager({ activePersona, sanctumReady = fal
           <div>
             <p>{error}</p>
             <p className="font-normal mt-1 text-rose-700">
-              Vérifiez la connexion réseau avec le cluster central OPN (127.0.0.1:8002) et réessayez.
+              Vérifiez la connexion au serveur, puis réessayez.
             </p>
           </div>
         </div>

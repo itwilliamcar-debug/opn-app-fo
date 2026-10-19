@@ -21,12 +21,29 @@ export const DEMO_PASSWORDS_BY_EMAIL = DEMO_LOGIN_ENABLED
       'achats@opn.ga': 'OPN2026@Achats',
       'pharmacien.national@opn.ga': 'OPN2026@PharmacieNat',
       'pharmacie.frv@opn.ga': 'OPN2026@PharmacieFrv',
+      'chef.antenne.est@opn.ga': 'OPN2026@Estuaire',
+      'chef.antenne.frv@opn.ga': 'OPN2026@Franceville',
+      'chef.antenne.lam@opn.ga': 'OPN2026@Lambarene',
+      'chef.antenne.mou@opn.ga': 'OPN2026@Mouila',
+      'chef.antenne.tch@opn.ga': 'OPN2026@Tchibanga',
+      'chef.antenne.mak@opn.ga': 'OPN2026@Makokou',
+      'chef.antenne.klm@opn.ga': 'OPN2026@KoulaMoutou',
       'chef.antenne.pog@opn.ga': 'OPN2026@PortGentil',
+      'chef.antenne.oye@opn.ga': 'OPN2026@Oyem',
+      'pharmacie.est@opn.ga': 'OPN2026@PharmaEst',
+      'pharmacie.demandeur.frv@opn.ga': 'OPN2026@PharmaFrv',
+      'pharmacie.lam@opn.ga': 'OPN2026@PharmaLam',
+      'pharmacie.mou@opn.ga': 'OPN2026@PharmaMou',
+      'pharmacie.tch@opn.ga': 'OPN2026@PharmaTch',
+      'pharmacie.mak@opn.ga': 'OPN2026@PharmaMak',
+      'pharmacie.klm@opn.ga': 'OPN2026@PharmaKlm',
+      'pharmacien.pog@opn.ga': 'OPN2026@PharmaciePog',
+      'pharmacie.oye@opn.ga': 'OPN2026@PharmaOye',
+      'commercial.oyem@opn.ga': 'OPN2026@Vendeur',
       'urgences@opn.ga': 'OPN2026@Urgences',
       'logistique@opn.ga': 'OPN2026@Logistique',
       'securite.convois@opn.ga': 'OPN2026@Securite',
       'convoyeur@opn.ga': 'OPN2026@Convoyeur',
-      'pharmacien.pog@opn.ga': 'OPN2026@PharmaciePog',
       'structure.pog@opn.ga': 'OPN2026@ChrPog',
       'communication@opn.ga': 'OPN2026@Com',
       'audit.interne@opn.ga': 'OPN2026@Audit',
@@ -84,9 +101,13 @@ export async function ensureSanctumSessionForPersona(personaOrEmail, options = {
 
   if (preferQuick) {
     const quick = await demoQuickLogin(email);
+    if (quick?.skipped) return { success: false, skipped: true };
     if (quick?.token && isRealSanctumToken(quick.token)) {
       setAuthToken(quick.token);
       return { success: true, token: quick.token, user: quick.user, demo_quick: true };
+    }
+    if (quick?.backendUnavailable) {
+      return { success: false, backendUnavailable: true, message: '' };
     }
   }
 
@@ -100,6 +121,11 @@ export async function ensureSanctumSessionForPersona(personaOrEmail, options = {
   }
 
   const loginRes = await loginUser(email, password);
+
+  if (loginRes?.skipped) return { success: false, skipped: true };
+  if (loginRes?.backendUnavailable) {
+    return { success: false, backendUnavailable: true, message: '' };
+  }
 
   if (loginRes?.token && isRealSanctumToken(loginRes.token)) {
     setAuthToken(loginRes.token);

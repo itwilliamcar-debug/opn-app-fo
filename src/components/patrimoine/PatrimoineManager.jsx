@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { apiRequest } from '../../services/api';
+import { askConfirm, pushToast } from '../../services/toastBus';
 import { droitModule, libelleDroits } from '../../data/rbacMatrix';
 
 const ETATS = ['NEUF', 'BON', 'USAGE', 'DEGRADE', 'HORS_SERVICE'];
@@ -51,7 +52,7 @@ export default function PatrimoineManager({ activePersona }) {
       setAmortissements(pat.amortissements || []);
       setAgents(pat.agents || []);
     } catch (err) {
-      if (!silent) setError(err.message || 'Impossible de charger le patrimoine.');
+      if (!silent) setError(err?.backendUnavailable ? '' : (err.message || 'Impossible de charger le patrimoine.'));
     } finally {
       if (!silent) setLoading(false);
     }
@@ -87,7 +88,7 @@ export default function PatrimoineManager({ activePersona }) {
       setForm(VIDE);
       await load();
     } catch (err) {
-      setError(err.message);
+      setError(err?.backendUnavailable ? '' : err.message);
     }
   }
 
@@ -100,7 +101,7 @@ export default function PatrimoineManager({ activePersona }) {
       });
       await load(true);
     } catch (err) {
-      setError(err.message);
+      setError(err?.backendUnavailable ? '' : err.message);
     }
   }
 
@@ -110,15 +111,21 @@ export default function PatrimoineManager({ activePersona }) {
       setError('Indiquez le détenteur et la date de remise.');
       return;
     }
+    const ok = await askConfirm({
+      message: `Confirmer la remise du bien « ${bien.designation} » ?`,
+      confirmLabel: 'Remettre',
+    });
+    if (!ok) return;
     setError('');
     try {
       await apiRequest(`/patrimoine/${bien.id}/remettre`, {
         method: 'POST',
         body: JSON.stringify(data),
       });
+      pushToast(`Remise de « ${bien.designation} » enregistrée.`);
       await load();
     } catch (err) {
-      setError(err.message);
+      setError(err?.backendUnavailable ? '' : err.message);
     }
   }
 

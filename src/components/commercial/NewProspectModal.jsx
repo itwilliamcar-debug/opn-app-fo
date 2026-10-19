@@ -27,12 +27,23 @@ export const STRUCTURE_TYPES = [
   'Infirmerie d\'Entreprise'
 ];
 
-export default function NewProspectModal({ isOpen, onClose, onSaveProspect, currentAntennaCode = 'G1' }) {
+export default function NewProspectModal({
+  isOpen,
+  onClose,
+  onSaveProspect,
+  currentAntennaCode = 'G1',
+  antennes = GABON_PROVINCIAL_ANTENNAS,
+  structureTypes = STRUCTURE_TYPES,
+  structuresRef = [],
+}) {
   if (!isOpen) return null;
+
+  const listeAntennes = antennes?.length ? antennes : GABON_PROVINCIAL_ANTENNAS;
+  const listeTypes = structureTypes?.length ? structureTypes : STRUCTURE_TYPES;
 
   const [formData, setFormData] = useState({
     nomStructure: '',
-    typeStructure: 'Clinique Privée',
+    typeStructure: listeTypes[0] || 'Clinique Privée',
     provinceCode: currentAntennaCode,
     localite: 'Libreville',
     regionSanitaire: 'Région Sanitaire Ouest',
@@ -43,7 +54,8 @@ export default function NewProspectModal({ isOpen, onClose, onSaveProspect, curr
     commentaire: '',
     gpsLat: '0.3901',
     gpsLng: '9.4544',
-    photoPreview: 'https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?w=400&h=300&fit=crop&auto=format&q=80'
+    photoPreview: 'https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?w=400&h=300&fit=crop&auto=format&q=80',
+    structureId: null,
   });
 
   const [isCapturingGps, setIsCapturingGps] = useState(false);
@@ -89,7 +101,7 @@ export default function NewProspectModal({ isOpen, onClose, onSaveProspect, curr
     e.preventDefault();
     if (!formData.nomStructure.trim()) return;
 
-    const antenna = GABON_PROVINCIAL_ANTENNAS.find(a => a.provinceCode === formData.provinceCode) || GABON_PROVINCIAL_ANTENNAS[0];
+    const antenna = listeAntennes.find(a => (a.provinceCode || a.code) === formData.provinceCode) || listeAntennes[0];
     const newCode = generateOpnDocNumber('PROSPECT', {
       antenneCode: formData.provinceCode,
       sequence: Math.floor(Math.random() * 800) + 10
@@ -99,10 +111,10 @@ export default function NewProspectModal({ isOpen, onClose, onSaveProspect, curr
       id: newCode,
       code: newCode,
       antenneId: formData.provinceCode,
-      antenneNom: antenna.nom,
+      antenneNom: antenna.nom || antenna.province,
       nomStructure: formData.nomStructure,
       typeStructure: formData.typeStructure,
-      province: antenna.province,
+      province: antenna.province || antenna.nom,
       provinceCode: formData.provinceCode,
       localite: formData.localite,
       regionSanitaire: formData.regionSanitaire,
@@ -130,7 +142,8 @@ export default function NewProspectModal({ isOpen, onClose, onSaveProspect, curr
         }
       ],
       devisAssocies: [],
-      clientConvertiId: null
+      clientConvertiId: null,
+      structureId: formData.structureId || null,
     };
 
     onSaveProspect(newProspect);
@@ -142,19 +155,19 @@ export default function NewProspectModal({ isOpen, onClose, onSaveProspect, curr
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden my-8 animate-in fade-in zoom-in-95 duration-200">
         
         {/* Header */}
-        <div className="bg-gradient-to-r from-[#003366] to-[#004b93] p-5 text-white flex items-center justify-between">
+        <div className="bg-white border-b border-slate-200 p-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center border border-white/20">
-              <Building2 className="w-5 h-5 text-[#00A651]" />
+            <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center border border-slate-200">
+              <Building2 className="w-5 h-5 text-slate-600" />
             </div>
             <div>
-              <h3 className="font-bold text-lg text-white">Nouveau Prospect Terrain (M2)</h3>
-              <p className="text-xs text-blue-100">Codification automatique PROS_&lt;Antenne&gt;_&lt;NNN&gt; &amp; Géolocalisation</p>
+              <h3 className="font-bold text-lg text-slate-900">Nouveau Prospect Terrain (M2)</h3>
+              <p className="text-xs text-slate-500">Codification automatique PROS_&lt;Antenne&gt;_&lt;NNN&gt; &amp; Géolocalisation</p>
             </div>
           </div>
           <button 
             onClick={onClose}
-            className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+            className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors border border-slate-200"
           >
             <X className="w-4 h-4" />
           </button>
@@ -193,12 +206,40 @@ export default function NewProspectModal({ isOpen, onClose, onSaveProspect, curr
                   onChange={(e) => setFormData({ ...formData, typeStructure: e.target.value })}
                   className="w-full text-xs px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#003366]/20 focus:border-[#003366]"
                 >
-                  {STRUCTURE_TYPES.map(type => (
+                  {listeTypes.map(type => (
                     <option key={type} value={type}>{type}</option>
                   ))}
                 </select>
               </div>
             </div>
+
+            {structuresRef?.length > 0 && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Préremplir depuis le référentiel structures
+                </label>
+                <select
+                  defaultValue=""
+                  onChange={(e) => {
+                    const s = structuresRef.find((row) => String(row.id) === e.target.value);
+                    if (!s) return;
+                    setFormData((prev) => ({
+                      ...prev,
+                      nomStructure: s.nom || prev.nomStructure,
+                      typeStructure: s.type || prev.typeStructure,
+                      localite: s.ville || prev.localite,
+                      structureId: s.id,
+                    }));
+                  }}
+                  className="w-full text-xs px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#003366]/20 focus:border-[#003366]"
+                >
+                  <option value="">Choisir une structure du référentiel…</option>
+                  {structuresRef.map((s) => (
+                    <option key={s.id} value={s.id}>{s.nom}{s.ville ? ` — ${s.ville}` : ''}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
           {/* Localisation & Antenne de rattachement */}
@@ -215,18 +256,18 @@ export default function NewProspectModal({ isOpen, onClose, onSaveProspect, curr
                 <select
                   value={formData.provinceCode}
                   onChange={(e) => {
-                    const ant = GABON_PROVINCIAL_ANTENNAS.find(a => a.provinceCode === e.target.value);
+                    const ant = listeAntennes.find(a => (a.provinceCode || a.code) === e.target.value);
                     setFormData({ 
                       ...formData, 
                       provinceCode: e.target.value,
-                      localite: ant?.chefLieu || 'Libreville'
+                      localite: ant?.chefLieu || ant?.ville || ant?.chef_lieu || 'Libreville'
                     });
                   }}
                   className="w-full text-xs px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#003366]/20 focus:border-[#003366]"
                 >
-                  {GABON_PROVINCIAL_ANTENNAS.map(ant => (
-                    <option key={ant.provinceCode} value={ant.provinceCode}>
-                      {ant.provinceCode} — {ant.province} ({ant.chefLieu})
+                  {listeAntennes.map(ant => (
+                    <option key={ant.provinceCode || ant.code} value={ant.provinceCode || ant.code}>
+                      {(ant.provinceCode || ant.code)} — {(ant.province || ant.nom)} ({ant.chefLieu || ant.ville || ant.chef_lieu || '—'})
                     </option>
                   ))}
                 </select>
@@ -266,7 +307,7 @@ export default function NewProspectModal({ isOpen, onClose, onSaveProspect, curr
                   Coordonnées GPS : <strong className="text-slate-900">{formData.gpsLat}, {formData.gpsLng}</strong>
                 </span>
                 {gpsSuccess && (
-                  <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md font-bold">
+                  <span className="inline-flex items-center gap-1 text-[11px] text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md font-semibold border border-slate-200">
                     <CheckCircle2 className="w-3 h-3" /> Position capturée !
                   </span>
                 )}
@@ -387,7 +428,7 @@ export default function NewProspectModal({ isOpen, onClose, onSaveProspect, curr
             </button>
             <button
               type="submit"
-              className="px-5 py-2 text-xs font-bold text-white bg-gradient-to-r from-[#00A651] to-[#008742] hover:opacity-95 rounded-lg shadow-md transition-all flex items-center gap-2"
+              className="px-5 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-all flex items-center gap-2"
             >
               <CheckCircle2 className="w-4 h-4" />
               Enregistrer le Prospect

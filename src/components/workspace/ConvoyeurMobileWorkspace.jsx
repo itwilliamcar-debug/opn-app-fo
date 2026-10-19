@@ -206,9 +206,9 @@ export default function ConvoyeurMobileWorkspace({ activePersona }) {
         list.unshift({ deliveryId, ...payload, at: new Date().toISOString(), offline: true });
         localStorage.setItem(key, JSON.stringify(list.slice(0, 50)));
         setSignatureSaved(true);
-        setActionError(
-          `${err?.message || 'API indisponible'} — signature enregistrée en local (sync ultérieure).`
-        );
+        if (!err?.backendUnavailable) {
+          setActionError(err?.message || 'Signature enregistrée sur cet appareil.');
+        }
         setTimeout(() => {
           setSignModalOpen(false);
           setSignatureSaved(false);
@@ -216,7 +216,7 @@ export default function ConvoyeurMobileWorkspace({ activePersona }) {
           setActionError(null);
         }, 1600);
       } catch {
-        setActionError(err?.message || 'Impossible d’enregistrer la signature.');
+        if (!err?.backendUnavailable) setActionError(err?.message || 'Impossible d’enregistrer la signature.');
       }
     } finally {
       setActionBusy(false);
@@ -260,9 +260,9 @@ export default function ConvoyeurMobileWorkspace({ activePersona }) {
         });
         localStorage.setItem(key, JSON.stringify(list.slice(0, 50)));
         setReportSuccess(true);
-        setActionError(
-          `${err?.message || 'API indisponible'} — rapport stocké localement.`
-        );
+        if (!err?.backendUnavailable) {
+          setActionError(err?.message || 'Rapport enregistré sur cet appareil.');
+        }
         setTimeout(() => {
           setReportModalOpen(false);
           setReportSuccess(false);
@@ -270,7 +270,7 @@ export default function ConvoyeurMobileWorkspace({ activePersona }) {
           handleStatusChange('RAPPORT_SOUMIS');
         }, 1600);
       } catch {
-        setActionError(err?.message || 'Impossible de transmettre le rapport.');
+        if (!err?.backendUnavailable) setActionError(err?.message || 'Impossible de transmettre le rapport.');
       }
     } finally {
       setActionBusy(false);

@@ -16,6 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import { formatXAF } from '../../utils/formatters';
+import { askConfirm } from '../../services/toastBus';
 import {
   fetchOrderDetail,
   fetchOrders,
@@ -178,7 +179,7 @@ export default function DafNationalDesk({
           : (Array.isArray(poRes?.orders) ? poRes.orders : (Array.isArray(poRes) ? poRes : []))
       );
     } catch (err) {
-      flash(err?.message || 'Impossible de charger les dossiers DAF.');
+      if (!err?.backendUnavailable) flash(err?.message || 'Impossible de charger les dossiers.');
       setOrders([]);
     } finally {
       setLoading(false);
@@ -272,7 +273,7 @@ export default function DafNationalDesk({
         }
       }
     } catch (err) {
-      flash(err?.message || 'Erreur API.');
+      if (!err?.backendUnavailable) flash(err?.message || 'Action impossible.');
     } finally {
       setActionBusyId(null);
     }
@@ -286,7 +287,7 @@ export default function DafNationalDesk({
       const res = await fetchOrderDetail(demandeId);
       setDetail(res?.demande || res);
     } catch (err) {
-      flash(err?.message || 'Dossier introuvable.');
+      if (!err?.backendUnavailable) flash(err?.message || 'Dossier introuvable.');
       setDetail(null);
     } finally {
       setDrawerLoading(false);
@@ -295,7 +296,12 @@ export default function DafNationalDesk({
 
   const canVisa = (d) => canRoleVisaDemand(codeRole, d.statut, d.montant_total_xaf);
 
-  const handleApprove = (d) => {
+  const handleApprove = async (d) => {
+    const ok = await askConfirm({
+      message: `Accorder le visa DAF pour ${d.numero_demande || d.id} ?`,
+      confirmLabel: 'Valider',
+    });
+    if (!ok) return;
     const commentaire =
       (commentById[d.id] || '').trim() ||
       'Visa DAF accordé — engagement budgétaire conforme aux seuils et crédits disponibles.';
@@ -310,8 +316,17 @@ export default function DafNationalDesk({
     );
   };
 
-  const handleReject = (d) => {
-    const motif = (motifById[d.id] || '').trim();
+  const handleReject = async (d) => {
+    const motifSaisi = (motifById[d.id] || '').trim();
+    const decision = await askConfirm({
+      message: `Refuser le visa DAF pour ${d.numero_demande || d.id} ?`,
+      confirmLabel: 'Rejeter',
+      tone: 'danger',
+      reasonLabel: motifSaisi.length >= 5 ? '' : 'Motif du rejet',
+      reasonRequired: motifSaisi.length < 5,
+    });
+    if (!decision) return;
+    const motif = motifSaisi.length >= 5 ? motifSaisi : decision.reason;
     if (motif.length < 5) {
       flash('Motif de rejet obligatoire (≥ 5 caractères).');
       return;

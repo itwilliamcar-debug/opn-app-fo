@@ -73,7 +73,7 @@ export default function HelpdeskModal({
       }
       setTicketSent(true);
     } catch (err) {
-      setErrorMessage(err?.message || 'API Helpdesk injoignable — aucun ticket invente.');
+      setErrorMessage(err?.backendUnavailable ? '' : (err?.message || 'Envoi du ticket impossible.'));
     } finally {
       setSubmitting(false);
     }

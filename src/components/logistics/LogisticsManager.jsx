@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { askConfirm } from '../../services/toastBus';
 import { 
   Truck, 
   MapPin, 
@@ -178,13 +179,22 @@ export default function LogisticsManager({ activePersona, sanctumReady }) {
         localStorage.setItem(key, JSON.stringify(list.slice(0, 40)));
       } catch { /* ignore */ }
       showToast(
-        `Mission ${codeMission} créée en local (API: ${err?.message || 'indisponible'}).`
+        err?.backendUnavailable
+          ? `Mission ${codeMission} enregistrée sur cet appareil.`
+          : `Mission ${codeMission} créée en local (${err?.message || 'serveur indisponible'}).`
       );
     }
   };
 
   // Mise à jour de statut de convoi
-  const handleUpdateStatus = (convoiId, nextStatus) => {
+  const handleUpdateStatus = async (convoiId, nextStatus) => {
+    const ok = await askConfirm({
+      message: nextStatus === 'LIVREE'
+        ? `Valider la réception du convoi ${convoiId} ?`
+        : `Passer le convoi ${convoiId} au statut ${nextStatus} ?`,
+      confirmLabel: nextStatus === 'LIVREE' ? 'Valider la réception' : 'Confirmer',
+    });
+    if (!ok) return;
     setConvoys(convoys.map(c => {
       if (c.id === convoiId) {
         return { ...c, statut: nextStatus };

@@ -12,11 +12,11 @@ import {
 } from 'lucide-react';
 
 export const VISIT_RESULTS = [
-  { id: 'INTERESSE', label: 'Très Intéressé (Devis à préparer)', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
-  { id: 'DEVIS_DEMANDE', label: 'Devis Demandé Immédiatement', color: 'text-blue-700 bg-blue-50 border-blue-200' },
-  { id: 'A_RELANCER', label: 'À Relancer (Décideur absent / En réflexion)', color: 'text-amber-700 bg-amber-50 border-amber-200' },
-  { id: 'COMMANDE_PASSEE', label: 'Bon de Commande Signé !', color: 'text-emerald-800 bg-emerald-100 border-emerald-300' },
-  { id: 'PAS_INTERESSE', label: 'Pas Intéressé / Fournisseur Exclusif Existant', color: 'text-rose-700 bg-rose-50 border-rose-200' }
+  { id: 'INTERESSE', label: 'Très Intéressé (Devis à préparer)', color: 'text-slate-700 bg-slate-50 border-slate-200' },
+  { id: 'DEVIS_DEMANDE', label: 'Devis Demandé Immédiatement', color: 'text-slate-700 bg-slate-50 border-slate-200' },
+  { id: 'A_RELANCER', label: 'À Relancer (Décideur absent / En réflexion)', color: 'text-slate-700 bg-slate-50 border-slate-200' },
+  { id: 'COMMANDE_PASSEE', label: 'Bon de Commande Signé !', color: 'text-slate-800 bg-slate-100 border-slate-300' },
+  { id: 'PAS_INTERESSE', label: 'Pas Intéressé / Fournisseur Exclusif Existant', color: 'text-slate-500 bg-slate-50 border-slate-200' }
 ];
 
 export default function LogVisitModal({ isOpen, onClose, prospect, onSaveVisit }) {
@@ -53,17 +53,17 @@ export default function LogVisitModal({ isOpen, onClose, prospect, onSaveVisit }
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         
         {/* Header */}
-        <div className="bg-gradient-to-r from-[#003366] to-[#004b93] p-5 text-white flex items-center justify-between">
+        <div className="bg-white border-b border-slate-200 p-5 flex items-center justify-between">
           <div>
-            <span className="text-[11px] font-bold uppercase tracking-wider text-[#00A651] bg-white/10 px-2.5 py-0.5 rounded-full inline-block mb-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600 bg-slate-100 px-2.5 py-0.5 rounded-full inline-block mb-1 border border-slate-200">
               Fiche {prospect.code}
             </span>
-            <h3 className="font-bold text-base text-white">{prospect.nomStructure}</h3>
-            <p className="text-xs text-blue-100">{prospect.localite} ({prospect.province})</p>
+            <h3 className="font-bold text-base text-slate-900">{prospect.nomStructure}</h3>
+            <p className="text-xs text-slate-500">{prospect.localite} ({prospect.province})</p>
           </div>
           <button 
             onClick={onClose}
-            className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+            className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors border border-slate-200"
           >
             <X className="w-4 h-4" />
           </button>
@@ -204,7 +204,7 @@ export default function LogVisitModal({ isOpen, onClose, prospect, onSaveVisit }
             </button>
             <button
               type="submit"
-              className="px-5 py-2 text-xs font-bold text-white bg-gradient-to-r from-[#003366] to-[#004b93] hover:opacity-95 rounded-lg shadow-md transition-all flex items-center gap-2"
+              className="px-5 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-all flex items-center gap-2"
             >
               <CheckCircle2 className="w-4 h-4 text-[#00A651]" />
               Enregistrer le Rapport de Visite

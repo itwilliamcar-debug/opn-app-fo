@@ -17,6 +17,7 @@ import {
 
 import { SICL_INTER_ANTENNA_ARBITRAGE_SEED } from '../../data/siclSeedData';
 import { generateOpnDocNumber } from '../../utils/codificationHelper';
+import { askConfirm, pushToast } from '../../services/toastBus';
 
 export default function NationalTransferArbitrageModal({ isOpen, onClose, onConfirmTransfer }) {
   if (!isOpen) return null;
@@ -24,7 +25,12 @@ export default function NationalTransferArbitrageModal({ isOpen, onClose, onConf
   const [arbitrageList, setArbitrageList] = useState(SICL_INTER_ANTENNA_ARBITRAGE_SEED);
   const [confirmedIds, setConfirmedIds] = useState([]);
 
-  const handleExecuteTransfer = (item) => {
+  const handleExecuteTransfer = async (item) => {
+    const ok = await askConfirm({
+      message: `Transférer ${item.quantiteSuggeree} unités de ${item.antenneSourceNom} vers ${item.antenneDestNom} ?`,
+      confirmLabel: 'Transférer',
+    });
+    if (!ok) return;
     const transferCode = generateOpnDocNumber('TRANSFERT', {
       sourceAntenne: item.antenneSourceId,
       destAntenne: item.antenneDestId,
@@ -40,7 +46,7 @@ export default function NationalTransferArbitrageModal({ isOpen, onClose, onConf
       });
     }
 
-    alert(`Transfert inter-antennes ${transferCode} initié avec succès ! ${item.quantiteSuggeree} unités transférées de ${item.antenneSourceNom} vers ${item.antenneDestNom}. Économie d'achat fournisseur : ${item.economieAchatXaf.toLocaleString()} XAF.`);
+    pushToast(`Transfert ${transferCode} initié : ${item.quantiteSuggeree} unités de ${item.antenneSourceNom} vers ${item.antenneDestNom}.`);
   };
 
   return (

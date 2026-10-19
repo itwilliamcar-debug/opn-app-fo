@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
   Users, 
   UserPlus, 
@@ -24,26 +24,39 @@ import {
   ShieldCheck,
   Award,
   Layers,
-  FileText
+  FileText,
+  RefreshCw
 } from 'lucide-react';
 
 import { SICL_PROSPECTS_SEED } from '../../data/siclSeedData';
 import { GABON_PROVINCIAL_ANTENNAS } from '../../data/provincialAntennaData';
-import { generateOpnDocNumber } from '../../utils/codificationHelper';
+import {
+  fetchProspects,
+  fetchCommercialReferentiel,
+  createProspect,
+  addProspectVisit,
+  convertProspect,
+} from '../../services/commercialApi';
 import NewProspectModal from './NewProspectModal';
 import LogVisitModal from './LogVisitModal';
 
 export const PROSPECT_STATUSES = [
   { id: 'ALL', label: 'Tous les Statuts', color: 'bg-slate-100 text-slate-700' },
-  { id: 'IDENTIFIE', label: '1. Identifié', color: 'bg-slate-100 text-slate-800' },
-  { id: 'CONTACTE', label: '2. Contacté', color: 'bg-blue-100 text-blue-800' },
-  { id: 'DEVIS_ENVOYE', label: '3. Devis Envoyé', color: 'bg-amber-100 text-amber-800' },
-  { id: 'CONVERTI', label: '4. Converti Client', color: 'bg-emerald-100 text-emerald-800' },
-  { id: 'PERDU', label: 'Perdu / Sans Suite', color: 'bg-rose-100 text-rose-800' }
+  { id: 'IDENTIFIE', label: '1. Identifié', color: 'bg-slate-100 text-slate-700' },
+  { id: 'CONTACTE', label: '2. Contacté', color: 'bg-slate-100 text-slate-700' },
+  { id: 'DEVIS_ENVOYE', label: '3. Devis Envoyé', color: 'bg-slate-200 text-slate-800' },
+  { id: 'CONVERTI', label: '4. Converti Client', color: 'bg-slate-800 text-white' },
+  { id: 'PERDU', label: 'Perdu / Sans Suite', color: 'bg-slate-100 text-slate-500' }
 ];
 
 export default function ProspectionCommercialeManager({ activePersona, onNavigateModule }) {
   const [prospects, setProspects] = useState(SICL_PROSPECTS_SEED);
+  const [antennes, setAntennes] = useState(GABON_PROVINCIAL_ANTENNAS);
+  const [typesStructures, setTypesStructures] = useState([]);
+  const [structuresRef, setStructuresRef] = useState([]);
+  const [apiReady, setApiReady] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState('');
   const [selectedAntennaCode, setSelectedAntennaCode] = useState('ALL');
   const [selectedStatus, setSelectedStatus] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
@@ -55,16 +68,62 @@ export default function ProspectionCommercialeManager({ activePersona, onNavigat
   const [selectedProspectDetail, setSelectedProspectDetail] = useState(null);
   const [conversionSuccessModal, setConversionSuccessModal] = useState(null);
 
+  const chargerDonnees = useCallback(async () => {
+    setLoading(true);
+    setErrorMsg('');
+    try {
+      const [ref, liste] = await Promise.all([
+        fetchCommercialReferentiel(),
+        fetchProspects(),
+      ]);
+      if (Array.isArray(ref?.antennes) && ref.antennes.length) {
+        setAntennes(ref.antennes.map((a) => ({
+          provinceCode: a.code,
+          province: a.nom,
+          nom: a.nom,
+          chefLieu: a.chef_lieu || a.ville,
+        })));
+      }
+      if (Array.isArray(ref?.types_structures)) {
+        setTypesStructures(ref.types_structures.map((t) => t.libelle || t.code).filter(Boolean));
+      }
+      if (Array.isArray(ref?.structures)) {
+        setStructuresRef(ref.structures);
+      }
+      if (liste.length) {
+        setProspects(liste);
+        setApiReady(true);
+      } else {
+        setProspects(SICL_PROSPECTS_SEED);
+        setApiReady(true);
+      }
+    } catch (err) {
+      setApiReady(false);
+      setProspects(SICL_PROSPECTS_SEED);
+      setErrorMsg(err?.message || 'Mode hors-ligne : données locales.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    chargerDonnees();
+  }, [chargerDonnees]);
+
   // Filtered prospects
   const filteredProspects = useMemo(() => {
     return prospects.filter(p => {
-      const matchAntenna = selectedAntennaCode === 'ALL' || p.provinceCode === selectedAntennaCode;
+      const matchAntenna = selectedAntennaCode === 'ALL'
+        || p.provinceCode === selectedAntennaCode
+        || p.antenneId === selectedAntennaCode
+        || String(p.antenneId || '').startsWith(selectedAntennaCode);
       const matchStatus = selectedStatus === 'ALL' || p.statut === selectedStatus;
+      const q = searchQuery.toLowerCase();
       const matchSearch = searchQuery === '' || 
-        p.nomStructure.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.localite.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.contactNom.toLowerCase().includes(searchQuery.toLowerCase());
+        (p.nomStructure || '').toLowerCase().includes(q) ||
+        (p.code || '').toLowerCase().includes(q) ||
+        (p.localite || '').toLowerCase().includes(q) ||
+        (p.contactNom || '').toLowerCase().includes(q);
       return matchAntenna && matchStatus && matchSearch;
     });
   }, [prospects, selectedAntennaCode, selectedStatus, searchQuery]);
@@ -87,12 +146,33 @@ export default function ProspectionCommercialeManager({ activePersona, onNavigat
   }, [prospects]);
 
   // Handlers
-  const handleSaveProspect = (newProspect) => {
-    setProspects(prev => [newProspect, ...prev]);
+  const handleSaveProspect = async (newProspect) => {
+    if (apiReady) {
+      try {
+        const saved = await createProspect({
+          ...newProspect,
+          commercialAssignee: activePersona?.nom || newProspect.commercialAssignee,
+        });
+        setProspects((prev) => [saved, ...prev.filter((p) => p.id !== saved.id)]);
+        return;
+      } catch (err) {
+        setErrorMsg(err?.message || 'Enregistrement API impossible — sauvegarde locale.');
+      }
+    }
+    setProspects((prev) => [newProspect, ...prev]);
   };
 
-  const handleSaveVisit = (prospectId, newVisit, newStatus) => {
-    setProspects(prev => prev.map(p => {
+  const handleSaveVisit = async (prospectId, newVisit, newStatus) => {
+    if (apiReady) {
+      try {
+        const updated = await addProspectVisit(prospectId, newVisit, newStatus);
+        setProspects((prev) => prev.map((p) => (p.id === prospectId ? updated : p)));
+        return;
+      } catch (err) {
+        setErrorMsg(err?.message || 'Visite non synchronisée — mise à jour locale.');
+      }
+    }
+    setProspects((prev) => prev.map((p) => {
       if (p.id === prospectId) {
         return {
           ...p,
@@ -100,94 +180,115 @@ export default function ProspectionCommercialeManager({ activePersona, onNavigat
           dateDerniereVisite: newVisit.date,
           joursDepuisVisite: 0,
           isDormant: false,
-          historiqueVisites: [newVisit, ...p.historiqueVisites]
+          historiqueVisites: [newVisit, ...(p.historiqueVisites || [])],
         };
       }
       return p;
     }));
   };
 
-  const handleConvertToClient = (prospect) => {
-    const newClientCode = generateOpnDocNumber('CLIENT', { sequence: Math.floor(Math.random() * 800) + 50 });
-    
-    setProspects(prev => prev.map(p => {
+  const handleConvertToClient = async (prospect) => {
+    if (apiReady) {
+      try {
+        const updated = await convertProspect(prospect.id);
+        setProspects((prev) => prev.map((p) => (p.id === prospect.id ? updated : p)));
+        setConversionSuccessModal({
+          prospectNom: updated.nomStructure,
+          prospectCode: updated.code,
+          clientCode: updated.clientConvertiId,
+          province: updated.province,
+        });
+        return;
+      } catch (err) {
+        setErrorMsg(err?.message || 'Conversion API impossible — mode local.');
+      }
+    }
+    const newClientCode = `CLIENT-${Date.now().toString().slice(-6)}`;
+    setProspects((prev) => prev.map((p) => {
       if (p.id === prospect.id) {
-        return {
-          ...p,
-          statut: 'CONVERTI',
-          clientConvertiId: newClientCode
-        };
+        return { ...p, statut: 'CONVERTI', clientConvertiId: newClientCode };
       }
       return p;
     }));
-
     setConversionSuccessModal({
       prospectNom: prospect.nomStructure,
       prospectCode: prospect.code,
       clientCode: newClientCode,
-      province: prospect.province
+      province: prospect.province,
     });
   };
 
   return (
     <div className="space-y-6">
       
-      {/* Top Banner Header */}
-      <div className="bg-gradient-to-r from-[#003366] via-[#004080] to-[#00A651] rounded-2xl p-6 text-white shadow-xl relative overflow-hidden">
-        <div className="absolute right-0 top-0 w-96 h-full bg-white/5 transform skew-x-12 pointer-events-none" />
-        
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* Top Banner Header — neutre (sans gradient coloré) */}
+      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 mb-2">
-              <span className="bg-white/20 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider border border-white/30 backdrop-blur-sm">
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <span className="bg-slate-100 text-slate-600 text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider border border-slate-200">
                 Module M2 &amp; M10 SICL
               </span>
-              <span className="text-emerald-300 text-xs font-semibold flex items-center gap-1">
+              <span className="text-slate-500 text-xs font-medium flex items-center gap-1">
                 <Compass className="w-3.5 h-3.5" /> Géolocalisation &amp; Mobilité Terrain
               </span>
             </div>
-            <h1 className="text-2xl font-black tracking-tight text-white">
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900">
               Prospection Commerciale &amp; Gestion des Tiers
             </h1>
-            <p className="text-xs text-blue-100 max-w-2xl mt-1">
-              Fiches structures de santé codifiées <code className="bg-black/20 px-1 py-0.5 rounded">PROS_&lt;Antenne&gt;_&lt;NNN&gt;</code>, capture GPS, suivi des visites, détection des prospects dormants &amp; conversion automatique en client.
+            <p className="text-xs text-slate-500 max-w-2xl mt-1">
+              Fiches structures de santé codifiées <code className="bg-slate-100 text-slate-700 px-1 py-0.5 rounded border border-slate-200">PROS_&lt;Antenne&gt;_&lt;NNN&gt;</code>, capture GPS, suivi des visites, détection des prospects dormants &amp; conversion automatique en client.
             </p>
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
             <button
-              onClick={() => setIsNewProspectOpen(true)}
-              className="px-4 py-2.5 bg-white text-[#003366] hover:bg-slate-50 font-black text-xs rounded-xl shadow-lg transition-all flex items-center gap-2"
+              type="button"
+              onClick={chargerDonnees}
+              className="px-3 py-2.5 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs rounded-xl border border-slate-200 transition-all flex items-center gap-2"
+              title="Actualiser depuis le référentiel"
             >
-              <Plus className="w-4 h-4 text-[#00A651]" />
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              Actualiser
+            </button>
+            <button
+              onClick={() => setIsNewProspectOpen(true)}
+              className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs rounded-xl border border-slate-900 transition-all flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
               Nouveau Prospect Terrain
             </button>
           </div>
         </div>
+        {(errorMsg || apiReady) && (
+          <p className="mt-3 text-[11px] text-slate-500">
+            {apiReady ? 'Données synchronisées avec le référentiel commercial.' : errorMsg}
+          </p>
+        )}
 
         {/* KPI Strip */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-6 pt-5 border-t border-white/15">
-          <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/10">
-            <p className="text-[10px] font-medium text-blue-100 uppercase tracking-wider">Total Prospects</p>
-            <p className="text-xl font-black text-white mt-0.5">{kpis.total}</p>
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-6 pt-5 border-t border-slate-100">
+          <div className="bg-slate-50 rounded-xl p-3 border border-slate-200">
+            <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">Total Prospects</p>
+            <p className="text-xl font-bold text-slate-900 mt-0.5">{kpis.total}</p>
           </div>
-          <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/10">
-            <p className="text-[10px] font-medium text-blue-100 uppercase tracking-wider">Devis en Cours</p>
-            <p className="text-xl font-black text-amber-300 mt-0.5">{kpis.devisEnvoyes}</p>
+          <div className="bg-slate-50 rounded-xl p-3 border border-slate-200">
+            <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">Devis en Cours</p>
+            <p className="text-xl font-bold text-slate-900 mt-0.5">{kpis.devisEnvoyes}</p>
           </div>
-          <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/10">
-            <p className="text-[10px] font-medium text-blue-100 uppercase tracking-wider">Convertis Clients</p>
-            <p className="text-xl font-black text-emerald-300 mt-0.5">{kpis.convertis}</p>
+          <div className="bg-slate-50 rounded-xl p-3 border border-slate-200">
+            <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">Convertis Clients</p>
+            <p className="text-xl font-bold text-slate-900 mt-0.5">{kpis.convertis}</p>
           </div>
-          <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/10">
-            <p className="text-[10px] font-medium text-blue-100 uppercase tracking-wider">Taux de Conversion</p>
-            <p className="text-xl font-black text-white mt-0.5">{kpis.conversionRate}%</p>
+          <div className="bg-slate-50 rounded-xl p-3 border border-slate-200">
+            <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">Taux de Conversion</p>
+            <p className="text-xl font-bold text-slate-900 mt-0.5">{kpis.conversionRate}%</p>
           </div>
-          <div className={`backdrop-blur-md rounded-xl p-3 border ${kpis.dormants > 0 ? 'bg-rose-500/20 border-rose-300/30' : 'bg-white/10 border-white/10'}`}>
-            <p className="text-[10px] font-medium text-rose-200 uppercase tracking-wider flex items-center gap-1">
-              <AlertTriangle className="w-3 h-3 text-rose-300" /> Dormants (&gt;90j)
+          <div className="bg-slate-50 rounded-xl p-3 border border-slate-200">
+            <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3 text-slate-400" /> Dormants (&gt;90j)
             </p>
-            <p className="text-xl font-black text-rose-300 mt-0.5">{kpis.dormants}</p>
+            <p className="text-xl font-bold text-slate-900 mt-0.5">{kpis.dormants}</p>
           </div>
         </div>
       </div>
@@ -214,10 +315,10 @@ export default function ProspectionCommercialeManager({ activePersona, onNavigat
             onChange={(e) => setSelectedAntennaCode(e.target.value)}
             className="text-xs font-semibold px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#003366]/20 text-slate-700 bg-white"
           >
-            <option value="ALL">Toutes les 9 Antennes</option>
-            {GABON_PROVINCIAL_ANTENNAS.map(ant => (
-              <option key={ant.provinceCode} value={ant.provinceCode}>
-                {ant.provinceCode} — {ant.province}
+            <option value="ALL">Toutes les antennes</option>
+            {antennes.map(ant => (
+              <option key={ant.provinceCode || ant.code} value={ant.provinceCode || ant.code}>
+                {(ant.provinceCode || ant.code)} — {ant.province || ant.nom}
               </option>
             ))}
           </select>
@@ -259,16 +360,16 @@ export default function ProspectionCommercialeManager({ activePersona, onNavigat
         </div>
       </div>
 
-      {/* Dormants Alert Banner (RG-M2-01) */}
+      {/* Dormants Alert Banner (RG-M2-01) — neutre */}
       {kpis.dormants > 0 && selectedStatus === 'ALL' && (
-        <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-center justify-between gap-3 text-amber-900">
+        <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl flex items-center justify-between gap-3 text-slate-800">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-amber-200 flex items-center justify-center shrink-0">
-              <AlertTriangle className="w-4 h-4 text-amber-800" />
+            <div className="w-8 h-8 rounded-lg bg-slate-200 flex items-center justify-center shrink-0">
+              <AlertTriangle className="w-4 h-4 text-slate-600" />
             </div>
             <div>
-              <p className="text-xs font-bold">Règle de gestion RG-M2-01 : {kpis.dormants} prospect(s) dormant(s) sans visite depuis plus de 90 jours !</p>
-              <p className="text-[11px] text-amber-700">Ces structures nécessitent une relance prioritaire du Responsable d'Antenne ou du Commercial.</p>
+              <p className="text-xs font-bold">Règle de gestion RG-M2-01 : {kpis.dormants} prospect(s) dormant(s) sans visite depuis plus de 90 jours.</p>
+              <p className="text-[11px] text-slate-500">Ces structures nécessitent une relance prioritaire du Responsable d&apos;Antenne ou du Commercial.</p>
             </div>
           </div>
           <button
@@ -276,7 +377,7 @@ export default function ProspectionCommercialeManager({ activePersona, onNavigat
               setProspects(prev => prev.filter(p => p.isDormant));
               setSelectedStatus('ALL');
             }}
-            className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg shadow-sm shrink-0"
+            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-semibold text-xs rounded-lg shrink-0"
           >
             Filtrer les Dormants
           </button>
@@ -290,9 +391,9 @@ export default function ProspectionCommercialeManager({ activePersona, onNavigat
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {[
             { id: 'IDENTIFIE', title: '1. Identifiés & Nouveaux', bg: 'bg-slate-50', headerBg: 'bg-slate-200 text-slate-800' },
-            { id: 'CONTACTE', title: '2. En Cours de Visite', bg: 'bg-blue-50/50', headerBg: 'bg-blue-100 text-blue-900' },
-            { id: 'DEVIS_ENVOYE', title: '3. Devis Soumis', bg: 'bg-amber-50/50', headerBg: 'bg-amber-100 text-amber-900' },
-            { id: 'CONVERTI', title: '4. Convertis Clients', bg: 'bg-emerald-50/50', headerBg: 'bg-emerald-100 text-emerald-900' }
+            { id: 'CONTACTE', title: '2. En Cours de Visite', bg: 'bg-slate-50', headerBg: 'bg-slate-200 text-slate-800' },
+            { id: 'DEVIS_ENVOYE', title: '3. Devis Soumis', bg: 'bg-slate-50', headerBg: 'bg-slate-200 text-slate-800' },
+            { id: 'CONVERTI', title: '4. Convertis Clients', bg: 'bg-slate-50', headerBg: 'bg-slate-200 text-slate-800' }
           ].map(col => {
             const colProspects = filteredProspects.filter(p => p.statut === col.id);
             return (
@@ -317,7 +418,7 @@ export default function ProspectionCommercialeManager({ activePersona, onNavigat
                       <div 
                         key={prospect.id} 
                         className={`bg-white rounded-xl p-3.5 border shadow-sm hover:shadow-md transition-all ${
-                          prospect.isDormant ? 'border-rose-300 ring-1 ring-rose-200' : 'border-slate-200'
+                          prospect.isDormant ? 'border-slate-400 ring-1 ring-slate-300' : 'border-slate-200'
                         }`}
                       >
                         {/* Structure Thumbnail & Codes */}
@@ -329,7 +430,7 @@ export default function ProspectionCommercialeManager({ activePersona, onNavigat
                           />
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center justify-between gap-1">
-                              <span className="text-[10px] font-bold text-[#003366] bg-blue-50 px-1.5 py-0.5 rounded">
+                              <span className="text-[10px] font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
                                 {prospect.code}
                               </span>
                               <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
@@ -358,7 +459,7 @@ export default function ProspectionCommercialeManager({ activePersona, onNavigat
                         {/* Dormant Badge or Last Visit */}
                         <div className="mt-2.5 flex items-center justify-between text-[10px]">
                           {prospect.isDormant ? (
-                            <span className="inline-flex items-center gap-1 font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
+                            <span className="inline-flex items-center gap-1 font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-300">
                               <AlertTriangle className="w-3 h-3" /> Dormant ({prospect.joursDepuisVisite}j sans visite)
                             </span>
                           ) : (
@@ -368,7 +469,7 @@ export default function ProspectionCommercialeManager({ activePersona, onNavigat
                           )}
 
                           {prospect.clientConvertiId && (
-                            <span className="font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                            <span className="font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
                               Client {prospect.clientConvertiId}
                             </span>
                           )}
@@ -378,16 +479,16 @@ export default function ProspectionCommercialeManager({ activePersona, onNavigat
                         <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2">
                           <button
                             onClick={() => setSelectedProspectForVisit(prospect)}
-                            className="text-[11px] font-bold text-[#003366] hover:bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 flex items-center gap-1 transition-colors"
+                            className="text-[11px] font-semibold text-slate-700 hover:bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 flex items-center gap-1 transition-colors"
                           >
-                            <Calendar className="w-3 h-3 text-[#00A651]" />
+                            <Calendar className="w-3 h-3 text-slate-500" />
                             Enregistrer Visite
                           </button>
 
                           {prospect.statut !== 'CONVERTI' && (
                             <button
                               onClick={() => handleConvertToClient(prospect)}
-                              className="text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 px-2.5 py-1 rounded-lg shadow-sm flex items-center gap-1 transition-all"
+                              className="text-[11px] font-semibold text-white bg-slate-800 hover:bg-slate-900 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-all"
                               title="Convertir en Client avec création de code N<NNNN>"
                             >
                               <CheckCircle2 className="w-3 h-3" />
@@ -435,7 +536,7 @@ export default function ProspectionCommercialeManager({ activePersona, onNavigat
                         />
                         <div>
                           <p className="font-bold text-slate-900">{prospect.nomStructure}</p>
-                          <span className="text-[10px] font-mono text-[#003366] bg-blue-50 px-1.5 py-0.2 rounded font-bold">
+                          <span className="text-[10px] font-mono text-slate-700 bg-slate-100 px-1.5 py-0.2 rounded font-bold border border-slate-200">
                             {prospect.code}
                           </span>
                         </div>
@@ -452,7 +553,7 @@ export default function ProspectionCommercialeManager({ activePersona, onNavigat
                     </td>
                     <td className="p-3">
                       {prospect.isDormant ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-300">
                           <AlertTriangle className="w-3 h-3" /> Dormant ({prospect.joursDepuisVisite}j)
                         </span>
                       ) : (
@@ -462,12 +563,7 @@ export default function ProspectionCommercialeManager({ activePersona, onNavigat
                       )}
                     </td>
                     <td className="p-3">
-                      <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
-                        prospect.statut === 'CONVERTI' ? 'bg-emerald-100 text-emerald-800' :
-                        prospect.statut === 'DEVIS_ENVOYE' ? 'bg-amber-100 text-amber-800' :
-                        prospect.statut === 'CONTACTE' ? 'bg-blue-100 text-blue-800' :
-                        'bg-slate-100 text-slate-700'
-                      }`}>
+                      <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
                         {prospect.statut}
                       </span>
                     </td>
@@ -475,14 +571,14 @@ export default function ProspectionCommercialeManager({ activePersona, onNavigat
                       <div className="flex items-center justify-end gap-2">
                         <button
                           onClick={() => setSelectedProspectForVisit(prospect)}
-                          className="px-2 py-1 text-[11px] font-bold text-[#003366] bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                          className="px-2 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors border border-slate-200"
                         >
                           Visite
                         </button>
                         {prospect.statut !== 'CONVERTI' && (
                           <button
                             onClick={() => handleConvertToClient(prospect)}
-                            className="px-2 py-1 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition-all"
+                            className="px-2 py-1 text-[11px] font-semibold text-white bg-slate-800 hover:bg-slate-900 rounded-lg transition-all"
                           >
                             Convertir
                           </button>
@@ -502,7 +598,10 @@ export default function ProspectionCommercialeManager({ activePersona, onNavigat
         isOpen={isNewProspectOpen}
         onClose={() => setIsNewProspectOpen(false)}
         onSaveProspect={handleSaveProspect}
-        currentAntennaCode={selectedAntennaCode === 'ALL' ? 'G1' : selectedAntennaCode}
+        currentAntennaCode={selectedAntennaCode === 'ALL' ? (antennes[0]?.provinceCode || 'G9') : selectedAntennaCode}
+        antennes={antennes}
+        structureTypes={typesStructures}
+        structuresRef={structuresRef}
       />
 
       {selectedProspectForVisit && (
@@ -516,18 +615,18 @@ export default function ProspectionCommercialeManager({ activePersona, onNavigat
 
       {/* Conversion Success Notification Modal (RG-M2-02) */}
       {conversionSuccessModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full text-center shadow-2xl border border-emerald-200 animate-in zoom-in-95 duration-200">
-            <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full text-center shadow-xl border border-slate-200">
+            <div className="w-16 h-16 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center mx-auto mb-4 border border-slate-200">
               <Sparkles className="w-8 h-8" />
             </div>
             
-            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200">
               Conversion Réussie (RG-M2-02)
             </span>
             
-            <h3 className="text-lg font-black text-slate-900 mt-2">
-              Nouveau Client Officiel OPN !
+            <h3 className="text-lg font-bold text-slate-900 mt-2">
+              Nouveau Client Officiel OPN
             </h3>
             
             <p className="text-xs text-slate-600 mt-1">
@@ -537,7 +636,7 @@ export default function ProspectionCommercialeManager({ activePersona, onNavigat
             <div className="my-4 p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-left space-y-1.5">
               <p className="flex justify-between">
                 <span className="text-slate-500">Code Client National :</span>
-                <strong className="text-emerald-700 font-mono text-sm">{conversionSuccessModal.clientCode}</strong>
+                <strong className="text-slate-800 font-mono text-sm">{conversionSuccessModal.clientCode}</strong>
               </p>
               <p className="flex justify-between">
                 <span className="text-slate-500">Antenne de Rattachement :</span>
@@ -545,13 +644,13 @@ export default function ProspectionCommercialeManager({ activePersona, onNavigat
               </p>
               <p className="flex justify-between">
                 <span className="text-slate-500">Historique Prospection :</span>
-                <span className="text-emerald-700 font-bold">Conservé &amp; Attaché</span>
+                <span className="text-slate-700 font-semibold">Conservé &amp; Attaché</span>
               </p>
             </div>
 
             <button
               onClick={() => setConversionSuccessModal(null)}
-              className="w-full py-2.5 bg-[#003366] hover:bg-[#002244] text-white font-bold text-xs rounded-xl shadow-md transition-all"
+              className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs rounded-xl transition-all"
             >
               Fermer &amp; Continuer
             </button>

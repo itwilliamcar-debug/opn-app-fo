@@ -15,6 +15,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { formatXAF } from '../../utils/formatters';
+import { askConfirm } from '../../services/toastBus';
 import { GABON_PROVINCES } from '../../data/gabonProvinces';
 import {
   fetchOrders,
@@ -282,7 +283,7 @@ function ActorDemandWorkspace({
       setOrders([]);
       setStructures([]);
       setAntennes([]);
-      flash(err?.message || 'API Laravel injoignable — aucune donnee demodee affichee.');
+      if (!err?.backendUnavailable) flash(err?.message || 'Impossible de charger les demandes.');
     } finally {
       setLoading(false);
     }
@@ -359,13 +360,22 @@ function ActorDemandWorkspace({
       flash(successMsg);
       await loadWorkspaceData();
     } catch (err) {
-      flash(err?.message || 'Erreur API — aucune transition locale de statut.');
+      if (!err?.backendUnavailable) flash(err?.message || 'Action impossible.');
     } finally {
       setActionBusyId(null);
     }
   };
 
-  const handleInstruct = (d) => {
+  const refDemande = (d) => d.numero_demande || d.reference || d.id;
+
+  const handleInstruct = async (d) => {
+    const ok = await askConfirm({
+      message: d.statut === 'EN_INSTRUCTION_APPRO'
+        ? `Terminer l'instruction de ${refDemande(d)} ?`
+        : `Prendre en charge ${refDemande(d)} pour instruction ?`,
+      confirmLabel: d.statut === 'EN_INSTRUCTION_APPRO' ? 'Terminer' : 'Prendre en charge',
+    });
+    if (!ok) return;
     const nextAction = d.statut === 'EN_INSTRUCTION_APPRO' ? 'complete' : 'start';
     runAction(
       d.id,
@@ -383,7 +393,12 @@ function ActorDemandWorkspace({
     );
   };
 
-  const handleValidateNational = (d) => {
+  const handleValidateNational = async (d) => {
+    const ok = await askConfirm({
+      message: `Valider nationalement la demande ${refDemande(d)} ?`,
+      confirmLabel: 'Valider',
+    });
+    if (!ok) return;
     runAction(
       d.id,
       () => validateNationalSupplyOrder(d.id, {
@@ -395,7 +410,12 @@ function ActorDemandWorkspace({
     );
   };
 
-  const handleTransferAchats = (d) => {
+  const handleTransferAchats = async (d) => {
+    const ok = await askConfirm({
+      message: `Transférer le dossier ${refDemande(d)} au service Achats ?`,
+      confirmLabel: 'Transférer',
+    });
+    if (!ok) return;
     runAction(
       d.id,
       () => transferSupplyOrderToAchats(d.id, {
@@ -406,7 +426,12 @@ function ActorDemandWorkspace({
     );
   };
 
-  const handleLaunchVisas = (d) => {
+  const handleLaunchVisas = async (d) => {
+    const ok = await askConfirm({
+      message: `Ouvrir le circuit de visas pour ${refDemande(d)} ?`,
+      confirmLabel: 'Ouvrir les visas',
+    });
+    if (!ok) return;
     runAction(
       d.id,
       () => launchVisaCircuit(d.id, {
@@ -417,8 +442,13 @@ function ActorDemandWorkspace({
     );
   };
 
-  const handleApproveVisa = (d) => {
+  const handleApproveVisa = async (d) => {
     const step = d.statut === 'EN_VISA_DIR' ? 'DIR' : d.statut === 'EN_VISA_DAF' ? 'DAF' : 'DG';
+    const ok = await askConfirm({
+      message: `Accorder le visa ${step} pour ${refDemande(d)} ?`,
+      confirmLabel: 'Valider le visa',
+    });
+    if (!ok) return;
     runAction(
       d.id,
       () => submitVisaSupplyOrder(d.id, {
@@ -431,8 +461,17 @@ function ActorDemandWorkspace({
     );
   };
 
-  const handleReject = (d) => {
+  const handleReject = async (d) => {
     const inVisa = ['EN_VISA_DIR', 'EN_VISA_DAF', 'EN_VISA_DG'].includes(d.statut);
+    const decision = await askConfirm({
+      message: `Rejeter ${refDemande(d)} ?`,
+      confirmLabel: 'Rejeter',
+      tone: 'danger',
+      reasonLabel: 'Motif du rejet',
+      reasonRequired: true,
+    });
+    if (!decision) return;
+    const motif = decision.reason;
     runAction(
       d.id,
       () => inVisa
@@ -440,12 +479,12 @@ function ActorDemandWorkspace({
             auteur_nom: activePersona.nom,
             auteur_role: activePersona.role,
             decision: 'reject',
-            motif: 'Rejet visa institutionnel — montant ou justification insuffisante.',
+            motif,
           })
         : rejectSupplyOrder(d.id, {
             auteur_nom: activePersona.nom,
             auteur_role: activePersona.role,
-            motif: 'Dossier incomplet ou quantités non justifiées au regard du stock/CMM.',
+            motif,
           }),
       inVisa
         ? 'Visa refusé — dossier REJETEE_VISA.'
@@ -491,7 +530,7 @@ function ActorDemandWorkspace({
         loadWorkspaceData();
       }, 1200);
     } catch (err) {
-      setDemandSubmitError(err?.message || 'API injoignable — demande non envoyée.');
+      setDemandSubmitError(err?.backendUnavailable ? '' : (err?.message || 'Demande non envoyée.'));
     } finally {
       setDemandSubmitting(false);
     }

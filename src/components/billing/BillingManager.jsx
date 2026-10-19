@@ -60,6 +60,7 @@ import RecordPaymentModal from './RecordPaymentModal';
 import NewCnamgsBatchModal from './NewCnamgsBatchModal';
 import QuoteWithMissedSalesModal from '../commercial/QuoteWithMissedSalesModal';
 import { downloadOfficialHtml } from '../../utils/downloadHelpers';
+import { askConfirm } from '../../services/toastBus';
 
 export default function BillingManager() {
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'invoices' | 'cnamgs' | 'edi' | 'tresor' | 'recovery' | 'conventions'
@@ -157,11 +158,16 @@ export default function BillingManager() {
   };
 
   // Schema validation & Raw EDI download
-  const handleValidateSchema = () => {
+  const handleValidateSchema = async () => {
     if (!selectedEdiFlux) {
       showToast('Sélectionnez un flux EDI à valider.');
       return;
     }
+    const ok = await askConfirm({
+      message: `Valider le schéma EDI ${selectedEdiFlux.id} ?`,
+      confirmLabel: 'Valider le schéma',
+    });
+    if (!ok) return;
     setIsValidatingSchema(true);
     setSchemaValidationResult(null);
     setTimeout(() => {

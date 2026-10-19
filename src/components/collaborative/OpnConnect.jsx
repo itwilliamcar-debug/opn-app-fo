@@ -338,18 +338,15 @@ export default function OpnConnect({
         if (cancelled) return;
         const ok = Boolean(res?.success && isRealSanctumToken(res.token || getAuthToken()));
         setHasToken(ok);
-        if (!ok) {
-          setErrorBanner(
-            res?.message ||
-              'Session Sanctum inactive. Utilisez Accès Intranet (API Laravel 127.0.0.1:8002).'
-          );
+        if (!ok && !res?.backendUnavailable) {
+          setErrorBanner(res?.message || 'Session inactive. Utilisez Accès Intranet.');
         } else {
           setErrorBanner('');
         }
       } catch (err) {
         if (!cancelled) {
           setHasToken(false);
-          setErrorBanner(err?.message || 'Impossible d’activer la session Sanctum.');
+          setErrorBanner(err?.backendUnavailable ? '' : (err?.message || 'Impossible d’activer la session.'));
         }
       } finally {
         if (!cancelled) setActivatingSession(false);
@@ -976,15 +973,14 @@ export default function OpnConnect({
                       res?.success && isRealSanctumToken(res.token || getAuthToken())
                     );
                     setHasToken(ok);
-                    if (!ok) {
-                      setErrorBanner(
-                        res?.message ||
-                          'Session Sanctum inactive. Vérifiez Accès Intranet / API :8002.'
-                      );
+                    if (!ok && !res?.backendUnavailable) {
+                      setErrorBanner(res?.message || 'Session inactive. Utilisez Accès Intranet.');
                     }
                   } catch (err) {
                     setHasToken(false);
-                    setErrorBanner(err?.message || 'Impossible d’activer la session.');
+                    if (!err?.backendUnavailable) {
+                      setErrorBanner(err?.message || 'Impossible d’activer la session.');
+                    }
                   } finally {
                     setActivatingSession(false);
                   }

@@ -16,6 +16,7 @@ import {
   Printer
 } from 'lucide-react';
 import { generateOpnDocNumber, numberToFrenchWords } from '../../utils/codificationHelper';
+import { askConfirm, pushToast } from '../../services/toastBus';
 import { PHARMACEUTICAL_CATALOG } from '../../data/pharmaceuticalData';
 import { GABON_PROVINCIAL_ANTENNAS, REGIONAL_HEALTH_STRUCTURES } from '../../data/provincialAntennaData';
 
@@ -133,11 +134,16 @@ export default function QuoteWithMissedSalesModal({ isOpen, onClose, onSaveQuote
     if (onRecordMissedSale) {
       onRecordMissedSale(missedSale);
     }
-    alert(`Vente manquée enregistrée pour ${missingQty} boîte(s) de ${line.designation} (${(missingQty * line.prixUnitaire).toLocaleString()} XAF de manque à gagner tracé).`);
+    pushToast(`Vente manquée enregistrée pour ${missingQty} boîte(s) de ${line.designation} (${(missingQty * line.prixUnitaire).toLocaleString()} XAF).`, 'warning');
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    const ok = await askConfirm({
+      message: `Valider et émettre le devis ${devisNumber} ?`,
+      confirmLabel: 'Valider et émettre',
+    });
+    if (!ok) return;
     const newQuote = {
       id: devisNumber,
       numero: devisNumber,
@@ -153,6 +159,7 @@ export default function QuoteWithMissedSalesModal({ isOpen, onClose, onSaveQuote
     };
 
     if (onSaveQuote) onSaveQuote(newQuote);
+    pushToast(`Devis ${devisNumber} validé et émis.`);
     onClose();
   };
 
@@ -161,24 +168,24 @@ export default function QuoteWithMissedSalesModal({ isOpen, onClose, onSaveQuote
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl overflow-hidden my-6 animate-in fade-in zoom-in-95 duration-200">
         
         {/* Header */}
-        <div className="bg-gradient-to-r from-[#003366] via-[#004080] to-[#00A651] p-5 text-white flex items-center justify-between">
+        <div className="bg-white border-b border-slate-200 p-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center border border-white/20">
-              <FileText className="w-5 h-5 text-[#00A651]" />
+            <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center border border-slate-200">
+              <FileText className="w-5 h-5 text-slate-600" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-bold uppercase tracking-wider bg-white/20 px-2 py-0.5 rounded">
+                <span className="text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-200">
                   Module M4 (Cycle de Vente)
                 </span>
-                <span className="text-xs font-mono font-bold text-emerald-300">{devisNumber}</span>
+                <span className="text-xs font-mono font-bold text-slate-700">{devisNumber}</span>
               </div>
-              <h3 className="font-bold text-lg text-white">Établissement de Devis &amp; Ventes Manquées</h3>
+              <h3 className="font-bold text-lg text-slate-900">Établissement de Devis &amp; Ventes Manquées</h3>
             </div>
           </div>
           <button 
             onClick={onClose}
-            className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+            className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors border border-slate-200"
           >
             <X className="w-4 h-4" />
           </button>
@@ -273,7 +280,7 @@ export default function QuoteWithMissedSalesModal({ isOpen, onClose, onSaveQuote
                     const lineTotal = line.prixUnitaire * line.quantiteDemandee;
 
                     return (
-                      <tr key={line.id} className={isRupture ? 'bg-amber-50/50' : ''}>
+                      <tr key={line.id} className={isRupture ? 'bg-slate-50' : ''}>
                         <td className="p-2.5">
                           <select
                             value={line.code}
@@ -290,11 +297,11 @@ export default function QuoteWithMissedSalesModal({ isOpen, onClose, onSaveQuote
 
                         <td className="p-2.5 text-center">
                           {line.stockDisponible > 0 ? (
-                            <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                            <span className="font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
                               {line.stockDisponible} u.
                             </span>
                           ) : (
-                            <span className="font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 flex items-center justify-center gap-1">
+                            <span className="font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-300 flex items-center justify-center gap-1">
                               <AlertTriangle className="w-3 h-3" /> 0 (Rupture)
                             </span>
                           )}
@@ -327,7 +334,7 @@ export default function QuoteWithMissedSalesModal({ isOpen, onClose, onSaveQuote
                               <button
                                 type="button"
                                 onClick={() => handleRecordMissedSaleForLine(line)}
-                                className="px-2 py-1 bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-bold rounded shadow-sm flex items-center gap-1 transition-all"
+                                className="px-2 py-1 bg-slate-800 hover:bg-slate-900 text-white text-[10px] font-semibold rounded flex items-center gap-1 transition-all"
                                 title="Enregistrer comme Vente Manquée dans la base (AM-02)"
                               >
                                 <AlertTriangle className="w-3 h-3" /> Vente Manquée
@@ -337,7 +344,7 @@ export default function QuoteWithMissedSalesModal({ isOpen, onClose, onSaveQuote
                             <button
                               type="button"
                               onClick={() => handleRemoveLine(line.id)}
-                              className="text-slate-400 hover:text-rose-600 p-1"
+                              className="text-slate-400 hover:text-slate-700 p-1"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -396,7 +403,7 @@ export default function QuoteWithMissedSalesModal({ isOpen, onClose, onSaveQuote
             </button>
             <button
               type="submit"
-              className="px-5 py-2 text-xs font-bold text-white bg-gradient-to-r from-[#003366] to-[#004b93] hover:opacity-95 rounded-lg shadow-md transition-all flex items-center gap-2"
+              className="px-5 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-all flex items-center gap-2"
             >
               <CheckCircle2 className="w-4 h-4 text-[#00A651]" />
               Valider &amp; Émettre le Devis

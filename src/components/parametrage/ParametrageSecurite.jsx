@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { apiRequest } from '../../services/api';
+import { askConfirm, pushToast } from '../../services/toastBus';
 import { droit, libelleDroits } from '../../data/rbacMatrix';
 import SpinnerPourcentage, { LigneChargementTableau } from '../common/SpinnerPourcentage';
 import { BoutonModifier, BoutonSupprimer } from '../common/BoutonsActionsTableau';
@@ -194,7 +195,7 @@ export default function ParametrageSecurite({ utilisateur }) {
   }
 
   useEffect(() => {
-    charger().catch((err) => setErreur(err.message));
+    charger().catch((err) => setErreur(err?.backendUnavailable ? '' : err.message));
   }, []);
 
   useEffect(() => {
@@ -261,7 +262,7 @@ export default function ParametrageSecurite({ utilisateur }) {
       setMessage('Matrice enregistrée.');
       await charger();
     } catch (err) {
-      setErreur(err.message);
+      setErreur(err?.backendUnavailable ? '' : err.message);
     } finally {
       setEnregistrement(false);
     }
@@ -327,29 +328,41 @@ export default function ParametrageSecurite({ utilisateur }) {
       setMessage('Enregistrement effectué.');
       await charger();
     } catch (err) {
-      setErreur(err.message);
+      setErreur(err?.backendUnavailable ? '' : err.message);
     }
   }
 
   async function desactiver(utilisateur) {
-    if (!window.confirm(`Désactiver ${utilisateur.name} ? Le compte ne pourra plus se connecter.`)) return;
+    const ok = await askConfirm({
+      message: `Désactiver ${utilisateur.name} ? Le compte ne pourra plus se connecter.`,
+      confirmLabel: 'Désactiver',
+      tone: 'danger',
+    });
+    if (!ok) return;
     try {
       await apiRequest(`/parametrage/utilisateurs/${utilisateur.id}`, { method: 'DELETE' });
       setMessage('Compte passé en inactif.');
+      pushToast(`${utilisateur.name} est désactivé.`, 'warning');
       await charger();
     } catch (err) {
-      setErreur(err.message);
+      setErreur(err?.backendUnavailable ? '' : err.message);
     }
   }
 
   async function supprimerProfil(profil) {
-    if (!window.confirm(`Supprimer le profil ${profil.libelle} ?`)) return;
+    const ok = await askConfirm({
+      message: `Supprimer le profil ${profil.libelle} ?`,
+      confirmLabel: 'Supprimer',
+      tone: 'danger',
+    });
+    if (!ok) return;
     try {
       await apiRequest(`/parametrage/profils/${profil.id}`, { method: 'DELETE' });
       setMessage('Profil supprimé.');
+      pushToast(`Profil ${profil.libelle} supprimé.`, 'warning');
       await charger();
     } catch (err) {
-      setErreur(err.message);
+      setErreur(err?.backendUnavailable ? '' : err.message);
     }
   }
 

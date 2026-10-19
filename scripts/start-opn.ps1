@@ -2,11 +2,12 @@
 # Usage: powershell -ExecutionPolicy Bypass -File scripts\start-opn.ps1
 
 $ErrorActionPreference = "Continue"
-$Root = Split-Path -Parent $PSScriptRoot
-$Backend = Join-Path $Root "opn-backend"
+$Frontend = Split-Path -Parent $PSScriptRoot
+$Root = Split-Path -Parent $Frontend
+$Backend = Join-Path $Root "Backend"
 
 Write-Host "== OPN : liberation ports ==" -ForegroundColor Cyan
-foreach ($p in 8002, 5173, 6001) {
+foreach ($p in 8002, 8011, 8012, 8013, 8014, 8015, 3000, 5173, 6001) {
   $lines = netstat -ano | Select-String ":$p\s+.*LISTENING"
   foreach ($line in $lines) {
     $parts = ($line.ToString() -split '\s+') | Where-Object { $_ -ne '' }
@@ -18,7 +19,17 @@ foreach ($p in 8002, 5173, 6001) {
   }
 }
 
+# Tuer aussi les workers PHP orphelins eventuels
+Get-Process php -ErrorAction SilentlyContinue | ForEach-Object {
+  cmd /c "taskkill /F /PID $($_.Id) >nul 2>&1"
+}
+
 Start-Sleep -Seconds 2
+
+if (-not (Test-Path (Join-Path $Backend "artisan"))) {
+  Write-Host "ERREUR - Backend introuvable: $Backend" -ForegroundColor Red
+  exit 1
+}
 
 Write-Host "== OPN : cache Laravel ==" -ForegroundColor Cyan
 Push-Location $Backend
@@ -27,13 +38,13 @@ php artisan config:clear 2>$null
 Pop-Location
 
 Write-Host "== OPN : cluster API (5 workers) ==" -ForegroundColor Cyan
-Start-Process -FilePath "node" -ArgumentList "scripts/opn-api-cluster.mjs" -WorkingDirectory $Root -WindowStyle Minimized
+Start-Process -FilePath "node" -ArgumentList "scripts/opn-api-cluster.mjs" -WorkingDirectory $Frontend -WindowStyle Minimized
 
-Write-Host "== OPN : Vite frontend ==" -ForegroundColor Cyan
+Write-Host "== OPN : Vite frontend (port 3000) ==" -ForegroundColor Cyan
 $npmCmd = "npm.cmd"
 $npmResolved = Get-Command npm.cmd -ErrorAction SilentlyContinue
 if ($npmResolved) { $npmCmd = $npmResolved.Source }
-Start-Process -FilePath $npmCmd -ArgumentList "run","dev","--","--host","127.0.0.1","--port","5173" -WorkingDirectory $Root -WindowStyle Minimized
+Start-Process -FilePath $npmCmd -ArgumentList "run","dev","--","--host","127.0.0.1","--port","3000" -WorkingDirectory $Frontend -WindowStyle Minimized
 
 Write-Host "== Verification (attente workers) ==" -ForegroundColor Cyan
 $apiOk = $false
@@ -53,7 +64,7 @@ for ($i = 1; $i -le 18; $i++) {
   }
   if (-not $viteOk) {
     try {
-      $v = Invoke-WebRequest -Uri "http://127.0.0.1:5173/" -UseBasicParsing -TimeoutSec 3
+      $v = Invoke-WebRequest -Uri "http://127.0.0.1:3000/" -UseBasicParsing -TimeoutSec 3
       if ($v.StatusCode -eq 200) {
         $viteOk = $true
         Write-Host "  Vite : 200 (essai $i)" -ForegroundColor Green
@@ -80,7 +91,7 @@ if ($apiOk) {
   }
 }
 
-Start-Process "chrome" "http://127.0.0.1:5173/"
+Start-Process "chrome" "http://127.0.0.1:3000/"
 if ($apiOk -and $viteOk) {
   Write-Host "OK - ouvrez Acces Intranet et reconnectez-vous." -ForegroundColor Green
 } else {

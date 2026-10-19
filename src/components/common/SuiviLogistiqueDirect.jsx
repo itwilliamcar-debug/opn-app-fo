@@ -1,4 +1,18 @@
-export default function SuiviLogistiqueDirect({ className = '' }) {
+const FALLBACK_FLUX = [
+  { code: 'G2', titre: 'Wagon Setrag N°884', trajet: 'Owendo ➔ Franceville (36h)', statut: 'En Transit', tone: 'transit' },
+  { code: 'G8', titre: 'Convoi Maritime N°12', trajet: 'Port-Gentil (12h)', statut: 'À Quai', tone: 'quai' },
+  { code: 'G4', titre: 'Chaîne du Froid 2°C–8°C', trajet: 'Mouila & Ndendé', statut: 'Contrôle OK', tone: 'ok' },
+];
+
+const TONE = {
+  transit: { box: 'bg-[#00A651]', badge: 'text-[#00FF87] bg-emerald-950/40 border-emerald-500/30' },
+  quai: { box: 'bg-[#2E68B4]', badge: 'text-cyan-300 bg-cyan-950/40 border-cyan-500/30' },
+  ok: { box: 'bg-[#DC143C]', badge: 'text-[#FFDE16] bg-amber-950/40 border-amber-500/30' },
+  alerte: { box: 'bg-rose-700', badge: 'text-rose-200 bg-rose-950/40 border-rose-500/30' },
+};
+
+export default function SuiviLogistiqueDirect({ className = '', flux = null }) {
+  const items = flux === null ? FALLBACK_FLUX : flux;
   return (
     <div className={`bg-[#0F2B52] text-white rounded-lg border border-[#163E75] p-5 space-y-4 shadow-xl ${className}`}>
       <div className="flex items-center justify-between border-b border-white/15 pb-3 gap-3">
@@ -19,38 +33,25 @@ export default function SuiviLogistiqueDirect({ className = '' }) {
       </div>
 
       <div className="space-y-2 text-xs text-blue-100">
-        <div className="flex items-center justify-between gap-3 p-2.5 bg-black/25 rounded-md border border-white/10">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-7 h-7 rounded bg-[#00A651] text-white flex items-center justify-center font-bold text-xs shrink-0">G2</div>
-            <div className="min-w-0">
-              <p className="text-xs font-bold text-white">Wagon Setrag N°884</p>
-              <p className="text-[10px] text-blue-200">Owendo ➔ Franceville (36h)</p>
-            </div>
+        {items.length === 0 ? (
+          <div className="p-3 bg-black/25 rounded-md border border-white/10 text-[11px] text-blue-200">
+            Aucun convoi actif pour le moment.
           </div>
-          <span className="text-[10px] font-extrabold text-[#00FF87] bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-500/30 shrink-0">En Transit</span>
-        </div>
-
-        <div className="flex items-center justify-between gap-3 p-2.5 bg-black/25 rounded-md border border-white/10">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-7 h-7 rounded bg-[#2E68B4] text-white flex items-center justify-center font-bold text-xs shrink-0">G8</div>
-            <div className="min-w-0">
-              <p className="text-xs font-bold text-white">Convoi Maritime N°12</p>
-              <p className="text-[10px] text-blue-200">Port-Gentil (12h)</p>
+        ) : items.map((item) => {
+          const tone = TONE[item.tone] || TONE.transit;
+          return (
+            <div key={`${item.code}-${item.titre}`} className="flex items-center justify-between gap-3 p-2.5 bg-black/25 rounded-md border border-white/10">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className={`w-7 h-7 rounded ${tone.box} text-white flex items-center justify-center font-bold text-xs shrink-0`}>{item.code}</div>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-white truncate">{item.titre}</p>
+                  <p className="text-[10px] text-blue-200 truncate">{item.trajet}</p>
+                </div>
+              </div>
+              <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded border shrink-0 ${tone.badge}`}>{item.statut}</span>
             </div>
-          </div>
-          <span className="text-[10px] font-extrabold text-cyan-300 bg-cyan-950/40 px-2 py-0.5 rounded border border-cyan-500/30 shrink-0">À Quai</span>
-        </div>
-
-        <div className="flex items-center justify-between gap-3 p-2.5 bg-black/25 rounded-md border border-white/10">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-7 h-7 rounded bg-[#DC143C] text-white flex items-center justify-center font-bold text-xs shrink-0">G4</div>
-            <div className="min-w-0">
-              <p className="text-xs font-bold text-white">Chaîne du Froid 2°C–8°C</p>
-              <p className="text-[10px] text-blue-200">Mouila & Ndendé</p>
-            </div>
-          </div>
-          <span className="text-[10px] font-extrabold text-[#FFDE16] bg-amber-950/40 px-2 py-0.5 rounded border border-amber-500/30 shrink-0">Contrôle OK</span>
-        </div>
+          );
+        })}
       </div>
 
       <div className="pt-2 border-t border-white/15 flex flex-wrap items-center justify-between gap-2 text-[11px] text-blue-200">
