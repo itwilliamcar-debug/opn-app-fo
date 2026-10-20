@@ -10,7 +10,7 @@ import {
   X,
   Loader2,
 } from 'lucide-react';
-import { loginUser, verify2FA } from '../../services/api';
+import { loginUser, verify2FA, confirmTotpSetup } from '../../services/api';
 import { ensureSanctumSessionForPersona, getDemoPasswordForEmail, isRealSanctumToken } from '../../services/sanctumSession';
 import { PROFILS_DEFAUT, USERS_PERSONAS, grouperProfilsDefaut } from '../../data/usersPersonas';
 
@@ -18,6 +18,10 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
   const [email, setEmail] = useState(currentPersona?.email || 'jb.obame@opn.ga');
   const [password, setPassword] = useState('OPN2026@Libreville');
   const [requires2FA, setRequires2FA] = useState(false);
+  const [requiresTotpSetup, setRequiresTotpSetup] = useState(false);
+  const [authChallenge, setAuthChallenge] = useState(null);
+  const [qrSvg, setQrSvg] = useState('');
+  const [totpSecret, setTotpSecret] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [otpHint, setOtpHint] = useState('');
   const [formLoading, setFormLoading] = useState(false);
@@ -26,10 +30,15 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const connectSeqRef = useRef(0);
+  const loginBusyRef = useRef(false);
 
   useEffect(() => {
     if (isOpen) return;
     setRequires2FA(false);
+    setRequiresTotpSetup(false);
+    setAuthChallenge(null);
+    setQrSvg('');
+    setTotpSecret('');
     setFormLoading(false);
     setErrorMessage('');
     setSuccessMessage('');
@@ -57,6 +66,19 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
     };
   };
 
+  const finaliserSession = (apiUser, token) => {
+    const matched = USERS_PERSONAS.find((p) => p.email === email) || {
+      id: 'USER-OPN',
+      nom: apiUser?.nom || apiUser?.name || email.split('@')[0],
+      email,
+      role: 'Agent Métier OPN',
+      codeRole: 'AGENT',
+      initiales: 'OPN',
+    };
+    onAuthSuccess(mergePersonaWithApiUser(matched, apiUser), token);
+    onClose();
+  };
+
   if (!isOpen) return null;
 
   const handleLoginSubmit = async (e) => {
@@ -79,8 +101,15 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
         setSuccessMessage('');
         return;
       }
-      if (res.requires_2fa && res.dev_otp_hint) {
-        const verified = await verify2FA(email, String(res.dev_otp_hint));
+      if (res.requires_totp_setup) {
+        setFormLoading(false);
+        setRequiresTotpSetup(true);
+        setAuthChallenge(res.auth_challenge || 'totp');
+        setQrSvg(res.qr_svg || '');
+        setTotpSecret(res.totp_secret || '');
+        setSuccessMessage(res.message || 'Scannez le QR code Google Authenticator.');
+      } else if (res.requires_2fa && res.dev_otp_hint && res.auth_challenge !== 'totp') {
+        const verified = await verify2FA(email, String(res.dev_otp_hint), res.auth_challenge || 'otp_email');
         setFormLoading(false);
         if (verified?.skipped) return;
         if (verified?.backendUnavailable) {
@@ -89,41 +118,25 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
         }
         if (verified?.token && isRealSanctumToken(verified.token)) {
           setSuccessMessage('Connexion réussie ! Session Sanctum active.');
-          const matched = USERS_PERSONAS.find(p => p.email === email) || {
-            id: 'USER-OPN',
-            nom: verified.user?.nom || email.split('@')[0],
-            email,
-            role: 'Agent Métier OPN',
-            codeRole: 'AGENT',
-            initiales: 'OPN',
-          };
-          onAuthSuccess(mergePersonaWithApiUser(matched, verified.user), verified.token);
-          onClose();
+          finaliserSession(verified.user, verified.token);
           return;
         }
         setRequires2FA(true);
+        setAuthChallenge(res.auth_challenge || 'otp_email');
         setOtpHint(String(res.dev_otp_hint));
         setErrorMessage(verified?.message || 'Code de sécurité refusé.');
       } else if (res.requires_2fa) {
         setFormLoading(false);
         setRequires2FA(true);
+        setAuthChallenge(res.auth_challenge || 'otp_email');
         setOtpHint(res.dev_otp_hint || '');
-        setSuccessMessage(res.message || 'Code 2FA transmis par SMS.');
+        setSuccessMessage(res.message || (res.auth_challenge === 'totp'
+          ? 'Saisissez le code Google Authenticator.'
+          : 'Code OTP transmis par e-mail.'));
       } else if (res.token && isRealSanctumToken(res.token)) {
         setFormLoading(false);
         setSuccessMessage('Connexion réussie ! Session Sanctum active.');
-        const matched = USERS_PERSONAS.find(p => p.email === email) || {
-          id: 'USER-OPN',
-          nom: res.user?.nom || email.split('@')[0],
-          email: email,
-          role: 'Agent Métier OPN',
-          codeRole: 'AGENT',
-          initiales: 'OPN'
-        };
-        setTimeout(() => {
-          onAuthSuccess(mergePersonaWithApiUser(matched, res.user), res.token);
-          onClose();
-        }, 200);
+        setTimeout(() => finaliserSession(res.user, res.token), 200);
       } else {
         const persona = USERS_PERSONAS.find(p => p.email === email) || USERS_PERSONAS[0];
         setSuccessMessage('Ouverture de la session Sanctum...');
@@ -151,22 +164,37 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
     setErrorMessage('');
 
     try {
-      const res = await verify2FA(email, otpCode);
+      const res = await verify2FA(email, otpCode, authChallenge);
       setFormLoading(false);
 
       if (res.token && isRealSanctumToken(res.token)) {
-        setSuccessMessage('Authentification forte 2FA validée ! Session Sanctum active.');
-        const matched = USERS_PERSONAS.find(p => p.email === email) || USERS_PERSONAS[0];
-        setTimeout(() => {
-          onAuthSuccess(mergePersonaWithApiUser(matched, res.user), res.token);
-          onClose();
-        }, 200);
+        setSuccessMessage('Authentification forte validée ! Session Sanctum active.');
+        setTimeout(() => finaliserSession(res.user, res.token), 200);
       } else {
-        setErrorMessage(res.message || 'Code 2FA incorrect.');
+        setErrorMessage(res.message || 'Code incorrect.');
       }
     } catch (err) {
       setFormLoading(false);
-      setErrorMessage(err?.message || 'Erreur 2FA.');
+      setErrorMessage(err?.message || 'Erreur de vérification.');
+    }
+  };
+
+  const handleTotpSetupSubmit = async (e) => {
+    e.preventDefault();
+    setFormLoading(true);
+    setErrorMessage('');
+    try {
+      const res = await confirmTotpSetup(email, password, otpCode);
+      setFormLoading(false);
+      if (res.token && isRealSanctumToken(res.token)) {
+        setSuccessMessage('Google Authenticator activé. Session ouverte.');
+        setTimeout(() => finaliserSession(res.user, res.token), 200);
+      } else {
+        setErrorMessage(res.message || 'Code Google Authenticator incorrect.');
+      }
+    } catch (err) {
+      setFormLoading(false);
+      setErrorMessage(err?.message || 'Activation impossible.');
     }
   };
 
@@ -179,6 +207,8 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
   };
 
   const handleInstantPersonaLogin = async (persona) => {
+    if (loginBusyRef.current) return;
+    loginBusyRef.current = true;
     const seq = ++connectSeqRef.current;
     remplirFormulaire(persona);
     setConnectingPersonaId(persona.id);
@@ -187,29 +217,31 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
     try {
       const session = await ensureSanctumSessionForPersona(persona, { forceNew: true, preferQuick: true });
       if (session?.skipped || seq !== connectSeqRef.current) return;
-      setConnectingPersonaId(null);
       if (session.requires_2fa) {
         setEmail(persona.email);
         setRequires2FA(true);
         setOtpHint(session.dev_otp_hint || '');
         setSuccessMessage(session.message || 'Saisissez le code de vérification.');
-        setConnectingPersonaId(null);
         return;
       }
       if (session.success && session.token) {
         onAuthSuccess(mergePersonaWithApiUser(persona, session.user), session.token);
         onClose();
+      } else if (!session.backendUnavailable) {
+        setErrorMessage(session.message || 'Impossible d’ouvrir la session.');
+        setSuccessMessage('');
       } else {
-        if (!session.backendUnavailable) {
-          setErrorMessage(session.message || 'Impossible d’ouvrir la session.');
-        }
         setSuccessMessage('');
       }
     } catch (err) {
       if (seq !== connectSeqRef.current) return;
-      setConnectingPersonaId(null);
       setSuccessMessage('');
       if (!err?.backendUnavailable) setErrorMessage(err?.message || 'Connexion impossible.');
+    } finally {
+      if (seq === connectSeqRef.current) {
+        loginBusyRef.current = false;
+        setConnectingPersonaId(null);
+      }
     }
   };
 
@@ -223,6 +255,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
       <button
         key={p.id}
         type="button"
+        disabled={Boolean(connectingPersonaId)}
         onClick={() => handleInstantPersonaLogin(p)}
         style={{ borderLeftColor: accent, borderLeftWidth: 4 }}
         className={`w-full p-2.5 rounded bg-white border text-left transition-all flex items-center justify-between gap-2 shadow-xs ${
@@ -296,19 +329,27 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
 
   return (
     <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-start justify-center px-3 sm:px-4 pt-24 sm:pt-28 pb-8 overflow-y-auto animate-in fade-in duration-200">
-      <div className={`w-full ${requires2FA ? 'max-w-xl' : 'max-w-7xl'} bg-white border border-slate-200 rounded-lg shadow-2xl relative flex flex-col max-h-[calc(100vh-8rem)]`}>
+      <div className={`w-full ${(requires2FA || requiresTotpSetup) ? 'max-w-xl' : 'max-w-7xl'} bg-white border border-slate-200 rounded-lg shadow-2xl relative flex flex-col max-h-[calc(100vh-8rem)]`}>
         <div className="flex items-start gap-3 px-6 sm:px-7 pt-5 pb-4 shrink-0 border-b border-slate-100">
           <div className="flex-1 text-center space-y-1.5 pl-8">
             <div className="w-11 h-11 rounded-lg bg-emerald-50 border border-emerald-200 text-[#00A651] flex items-center justify-center mx-auto shadow-sm">
               <Lock className="w-5 h-5" />
             </div>
             <h3 className="text-lg font-bold text-slate-900">
-              {requires2FA ? 'Vérification 2FA' : 'Connexion Espace Métier (ERP OPN)'}
+              {requiresTotpSetup
+                ? 'Activer Google Authenticator'
+                : requires2FA
+                  ? (authChallenge === 'totp' ? 'Google Authenticator' : 'Vérification OTP e-mail')
+                  : 'Connexion Espace Métier (ERP OPN)'}
             </h3>
             <p className="text-xs text-slate-600 max-w-2xl mx-auto">
-              {requires2FA
-                ? 'Saisissez le code de sécurité temporaire reçu par SMS ou token.'
-                : 'Accès sécurisé pour la Direction Générale, les Approvisionnements et les 9 Antennes Provinciales.'}
+              {requiresTotpSetup
+                ? 'Scannez le QR code avec Google Authenticator, puis saisissez le code à 6 chiffres.'
+                : requires2FA
+                  ? (authChallenge === 'totp'
+                    ? 'Ouvrez Google Authenticator et saisissez le code affiché pour ce compte.'
+                    : 'Saisissez le code à 6 chiffres reçu par e-mail.')
+                  : 'Accès sécurisé pour la Direction Générale, les Approvisionnements et les 9 Antennes Provinciales.'}
             </p>
           </div>
           <button
@@ -337,7 +378,49 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
           </div>
         )}
 
-        {!requires2FA ? (
+        {requiresTotpSetup ? (
+          <form onSubmit={handleTotpSetupSubmit} className="space-y-4 text-xs">
+            <div className="p-3 bg-sky-50 border border-sky-200 rounded-md text-sky-900">
+              <p className="font-bold">Configuration Google Authenticator</p>
+              <p className="text-[11px] mt-0.5">Scannez ce QR code dans l&apos;application, puis validez avec le premier code généré.</p>
+            </div>
+            {qrSvg ? (
+              <div className="flex justify-center" dangerouslySetInnerHTML={{ __html: qrSvg }} />
+            ) : null}
+            {totpSecret ? (
+              <p className="text-center text-[11px] text-slate-600">
+                Clé manuelle : <span className="font-mono font-bold tracking-wider">{totpSecret}</span>
+              </p>
+            ) : null}
+            <div>
+              <label className="block font-bold text-slate-800 mb-1">Code à 6 chiffres</label>
+              <input
+                type="text"
+                required
+                maxLength={6}
+                value={otpCode}
+                onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="123456"
+                className="w-full px-3 py-2 border border-slate-300 rounded-md text-slate-900 font-mono text-center text-base tracking-widest bg-white focus:outline-none focus:border-[#2E68B4]"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={formLoading}
+              className="w-full py-2.5 px-4 rounded-md bg-[#00A651] hover:bg-[#008742] text-white font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-2 disabled:opacity-70"
+            >
+              <ShieldCheck className="w-4 h-4" />
+              <span>Activer et se connecter</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setRequiresTotpSetup(false); setOtpCode(''); setQrSvg(''); setTotpSecret(''); }}
+              className="w-full text-[11px] text-slate-500 hover:text-slate-800"
+            >
+              Retour à la connexion
+            </button>
+          </form>
+        ) : !requires2FA ? (
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(220px,260px)_minmax(0,1fr)] gap-5 items-start">
           <form onSubmit={handleLoginSubmit} className="space-y-3 text-xs w-full max-w-[260px]">
             <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
@@ -397,8 +480,14 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
         ) : (
           <form onSubmit={handle2FASubmit} className="space-y-4 text-xs">
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-md text-amber-900">
-              <p className="font-bold">Code OTP 2FA Requis</p>
-              <p className="text-[11px] mt-0.5">{otpHint || 'Code de validation à 6 chiffres envoyé au terminal enregistré.'}</p>
+              <p className="font-bold">
+                {authChallenge === 'totp' ? 'Code Google Authenticator' : 'Code OTP e-mail'}
+              </p>
+              <p className="text-[11px] mt-0.5">
+                {otpHint || (authChallenge === 'totp'
+                  ? 'Code à 6 chiffres affiché dans Google Authenticator.'
+                  : 'Code à 6 chiffres envoyé sur votre boîte mail OPN.')}
+              </p>
             </div>
 
             <div>
@@ -408,7 +497,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
                 required
                 maxLength={6}
                 value={otpCode}
-                onChange={(e) => setOtpCode(e.target.value)}
+                onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                 placeholder="123456"
                 className="w-full px-3 py-2 border border-slate-300 rounded-md text-slate-900 font-mono text-center text-base tracking-widest bg-white focus:outline-none focus:border-[#2E68B4]"
               />
@@ -420,7 +509,14 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess, currentPerso
               className="w-full py-2.5 px-4 rounded-md bg-[#00A651] hover:bg-[#008742] text-white font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-2 disabled:opacity-70"
             >
               <ShieldCheck className="w-4 h-4" />
-              <span>Valider le code 2FA</span>
+              <span>Valider le code</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setRequires2FA(false); setOtpCode(''); setAuthChallenge(null); }}
+              className="w-full text-[11px] text-slate-500 hover:text-slate-800"
+            >
+              Retour à la connexion
             </button>
           </form>
         )}

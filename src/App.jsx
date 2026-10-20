@@ -575,6 +575,7 @@ export default function App() {
 
   // =========================================================================
   // MOTEUR DE DÉMONSTRATION GUIDÉE 100% AUTOMATIQUE (AUTOPILOT SANS CLIC)
+  // Le domaine suivant s'affiche dès ~45 % pour qu'on le voie en fond avant 100 %.
   // =========================================================================
   useEffect(() => {
     if (!activeTourState || activeTourState.isAutoPlaying === false) return undefined;
@@ -582,45 +583,60 @@ export default function App() {
     const intervalMs = 100;
     const duration = activeTourState.stepDuration || 7000;
     const increment = (intervalMs / duration) * 100;
+    const REVEAL_AT = 45;
+
+    const applyStepDomain = (step) => {
+      if (!step) return;
+      if (step.targetPersonaId) {
+        const targetPersona = USERS_PERSONAS.find((p) => p.id === step.targetPersonaId);
+        if (targetPersona) {
+          setActivePersona(targetPersona);
+          setCurrentUser(targetPersona);
+        }
+      }
+      setCurrentView(step.targetModule);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
 
     const timer = setInterval(() => {
       setActiveTourState((prev) => {
         if (!prev || prev.isAutoPlaying === false) return prev;
         const nextProgress = (prev.progress || 0) + increment;
+        const scenario = DEMO_SCENARIOS.find((s) => s.id === prev.scenarioId) || DEMO_SCENARIOS[0];
+        const nextIdx = prev.currentStepIndex + 1;
+        const hasNext = nextIdx < scenario.steps.length;
+
+        // Aperçu anticipé : le prochain domaine (module + profil) apparaît en arrière-plan
+        if (hasNext && !prev.nextDomainRevealed && nextProgress >= REVEAL_AT) {
+          applyStepDomain(scenario.steps[nextIdx]);
+          return {
+            ...prev,
+            progress: nextProgress,
+            nextDomainRevealed: true,
+          };
+        }
 
         if (nextProgress >= 100) {
-          // Étape terminée -> Passage automatique à la suivante
-          const scenario = DEMO_SCENARIOS.find((s) => s.id === prev.scenarioId) || DEMO_SCENARIOS[0];
-          const nextIdx = prev.currentStepIndex + 1;
-
-          if (nextIdx < scenario.steps.length) {
+          if (hasNext) {
             const nextStep = scenario.steps[nextIdx];
-            if (nextStep.targetPersonaId) {
-              const targetPersona = USERS_PERSONAS.find((p) => p.id === nextStep.targetPersonaId);
-              if (targetPersona) {
-                setActivePersona(targetPersona);
-                setCurrentUser(targetPersona);
-              }
+            if (!prev.nextDomainRevealed) {
+              applyStepDomain(nextStep);
             }
-            setCurrentView(nextStep.targetModule);
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-
             return {
               ...prev,
               currentStepIndex: nextIdx,
-              progress: 0
+              progress: 0,
+              nextDomainRevealed: false,
             };
-          } else {
-            // Tour complet terminé
-            setRealtimeNotification('Démonstration guidée 100% automatique terminée avec succès.');
-            setTimeout(() => setRealtimeNotification(null), 5000);
-            return null;
           }
+          setRealtimeNotification('Démonstration guidée 100% automatique terminée avec succès.');
+          setTimeout(() => setRealtimeNotification(null), 5000);
+          return null;
         }
 
         return {
           ...prev,
-          progress: nextProgress
+          progress: nextProgress,
         };
       });
     }, intervalMs);
@@ -647,7 +663,8 @@ export default function App() {
       currentStepIndex: 0,
       isAutoPlaying: isAutoPlay,
       stepDuration: duration,
-      progress: 0
+      progress: 0,
+      nextDomainRevealed: false,
     });
 
     setRealtimeNotification(`Mode Autonome actif : Démonstration « ${scenario.title} » en cours...`);
@@ -675,7 +692,8 @@ export default function App() {
         return {
           ...prev,
           currentStepIndex: nextIdx,
-          progress: 0
+          progress: 0,
+          nextDomainRevealed: false,
         };
       } else {
         setRealtimeNotification('Démonstration guidée terminée avec succès.');
@@ -705,7 +723,8 @@ export default function App() {
       return {
         ...prev,
         currentStepIndex: prevIdx,
-        progress: 0
+        progress: 0,
+        nextDomainRevealed: false,
       };
     });
   };
@@ -726,7 +745,8 @@ export default function App() {
       return {
         ...prev,
         stepDuration: newDuration,
-        progress: 0
+        progress: 0,
+        nextDomainRevealed: false,
       };
     });
   };

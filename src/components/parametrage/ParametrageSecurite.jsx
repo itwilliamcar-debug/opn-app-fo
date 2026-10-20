@@ -107,16 +107,27 @@ function ListeChoix({ valeur, surChangement, options, texteVide }) {
   );
 }
 
+const LIBELLES_AUTH_MODE = {
+  simple: 'Simple (mot de passe)',
+  otp_email: 'OTP par e-mail',
+  totp: 'Google Authenticator',
+};
+
 export default function ParametrageSecurite({ utilisateur }) {
   const peutCreerUtilisateur = droit(utilisateur, 'utilisateurs', 'creer');
   const peutModifierUtilisateur = droit(utilisateur, 'utilisateurs', 'modifier');
   const peutGererParametrage = droit(utilisateur, 'parametrage', 'creer') || droit(utilisateur, 'parametrage', 'modifier');
+  const codeProfilActeur = utilisateur?.profil?.code || utilisateur?.profil_code || '';
+  const codeRoleActeur = utilisateur?.code_role || utilisateur?.codeRole || '';
+  const peutGererAuth = ['sa', 'dsi', 'admin_metier'].includes(codeProfilActeur)
+    || ['SUPER_ADMIN', 'ADMIN_METIER'].includes(codeRoleActeur);
   const [onglet, setOnglet] = useState('utilisateurs');
   const [utilisateurs, setUtilisateurs] = useState([]);
   const [profils, setProfils] = useState([]);
   const [habilitations, setHabilitations] = useState([]);
   const [droits, setDroits] = useState({});
   const [forceRetrait, setForceRetrait] = useState({});
+  const [authEnCours, setAuthEnCours] = useState(null);
   const [filtreMatrice, setFiltreMatrice] = useState('access');
   const [rechercheMatrice, setRechercheMatrice] = useState('');
   const [pageMatrice, setPageMatrice] = useState(1);
@@ -155,47 +166,82 @@ export default function ParametrageSecurite({ utilisateur }) {
   async function charger() {
     setChargement(true);
     setErreur('');
+    const opts = { priority: true, timeoutMs: 25000 };
     try {
-    const [u, p, h, l, territoireReponse] = await Promise.all([
-      apiRequest('/parametrage/utilisateurs'),
-      apiRequest('/parametrage/profils'),
-      apiRequest('/parametrage/habilitations'),
-      apiRequest('/parametrage/habilitations-profils'),
-      apiRequest('/parametrage/territoire'),
-    ]);
-    setUtilisateurs(u.utilisateurs || []);
-    setProfils(p.profils || []);
-    setHabilitations(h.habilitations || []);
-    setTerritoire({
-      provinces: territoireReponse.provinces || [],
-      antennes: territoireReponse.antennes || [],
-      directions: territoireReponse.directions || [],
-    });
-    const carte = {};
-    (p.profils || []).forEach((profil) => {
-      carte[profil.id] = {};
-      (h.habilitations || []).forEach((habilitation) => {
-        carte[profil.id][habilitation.id] = { ...VIDE };
-      });
-    });
-    (l.liaisons || []).forEach((liaison) => {
-      if (!carte[liaison.profil_id]) carte[liaison.profil_id] = {};
-      carte[liaison.profil_id][liaison.habilitation_id] = {
-        creer: Boolean(liaison.creer),
-        lire: Boolean(liaison.lire),
-        modifier: Boolean(liaison.modifier),
-        valider: Boolean(liaison.valider),
-        supprimer: Boolean(liaison.supprimer),
-      };
-    });
-    setDroits(carte);
+      const [uRes, pRes, hRes, lRes, tRes] = await Promise.allSettled([
+        apiRequest('/parametrage/utilisateurs', opts),
+        apiRequest('/parametrage/profils', opts),
+        apiRequest('/parametrage/habilitations', opts),
+        apiRequest('/parametrage/habilitations-profils', opts),
+        apiRequest('/parametrage/territoire', opts),
+      ]);
+
+      const u = uRes.status === 'fulfilled' ? uRes.value : null;
+      const p = pRes.status === 'fulfilled' ? pRes.value : null;
+      const h = hRes.status === 'fulfilled' ? hRes.value : null;
+      const l = lRes.status === 'fulfilled' ? lRes.value : null;
+      const territoireReponse = tRes.status === 'fulfilled' ? tRes.value : null;
+
+      if (u) setUtilisateurs(u.utilisateurs || []);
+      if (p) setProfils(p.profils || []);
+      if (h) setHabilitations(h.habilitations || []);
+      if (territoireReponse) {
+        setTerritoire({
+          provinces: territoireReponse.provinces || [],
+          antennes: territoireReponse.antennes || [],
+          directions: territoireReponse.directions || [],
+        });
+      }
+
+      const profils = p?.profils || [];
+      const habilitations = h?.habilitations || [];
+      const liaisons = l?.liaisons || [];
+      if (profils.length || habilitations.length || liaisons.length) {
+        const carte = {};
+        profils.forEach((profil) => {
+          carte[profil.id] = {};
+          habilitations.forEach((habilitation) => {
+            carte[profil.id][habilitation.id] = { ...VIDE };
+          });
+        });
+        liaisons.forEach((liaison) => {
+          if (!carte[liaison.profil_id]) carte[liaison.profil_id] = {};
+          carte[liaison.profil_id][liaison.habilitation_id] = {
+            creer: Boolean(liaison.creer),
+            lire: Boolean(liaison.lire),
+            modifier: Boolean(liaison.modifier),
+            valider: Boolean(liaison.valider),
+            supprimer: Boolean(liaison.supprimer),
+          };
+        });
+        setDroits(carte);
+      }
+
+      const echecs = [uRes, pRes, hRes, lRes, tRes]
+        .filter((r) => r.status === 'rejected')
+        .map((r) => r.reason)
+        .filter((err) => err && !err.backendUnavailable && !err.skipped);
+      if (!u && uRes.status === 'rejected') {
+        const err = uRes.reason;
+        setErreur(err?.backendUnavailable || err?.skipped
+          ? 'Impossible de charger les utilisateurs (serveur occupé). Réessayez.'
+          : (err?.message || 'Impossible de charger les utilisateurs.'));
+      } else if (echecs.length && !u) {
+        setErreur(echecs[0]?.message || 'Chargement partiel des droits d\'accès.');
+      }
     } finally {
       setChargement(false);
     }
   }
 
   useEffect(() => {
-    charger().catch((err) => setErreur(err?.backendUnavailable ? '' : err.message));
+    charger().catch((err) => {
+      if (err?.backendUnavailable || err?.skipped) {
+        setErreur('Impossible de charger les droits d\'accès (serveur occupé). Réessayez.');
+        return;
+      }
+      setErreur(err?.message || 'Erreur de chargement.');
+    });
   }, []);
 
   useEffect(() => {
@@ -260,6 +306,7 @@ export default function ParametrageSecurite({ utilisateur }) {
         });
       }
       setMessage('Matrice enregistrée.');
+      pushToast('Matrice enregistrée avec succès.', 'success');
       await charger();
     } catch (err) {
       setErreur(err?.backendUnavailable ? '' : err.message);
@@ -272,6 +319,7 @@ export default function ParametrageSecurite({ utilisateur }) {
     event.preventDefault();
     setErreur('');
     setMessage('');
+    const etaitCreation = !fiche?.id;
     try {
       if (fiche.type === 'utilisateur') {
         if (!fiche.province_rattachement_id || !fiche.antenne_id) {
@@ -289,6 +337,7 @@ export default function ParametrageSecurite({ utilisateur }) {
           direction_id: fiche.direction_id ? Number(fiche.direction_id) : null,
         };
         if (fiche.password) body.password = fiche.password;
+        if (peutGererAuth && fiche.auth_mode) body.auth_mode = fiche.auth_mode;
         if (fiche.id) {
           await apiRequest(`/parametrage/utilisateurs/${fiche.id}`, { method: 'PUT', body: JSON.stringify(body) });
         } else {
@@ -326,6 +375,10 @@ export default function ParametrageSecurite({ utilisateur }) {
       }
       setFiche(null);
       setMessage('Enregistrement effectué.');
+      pushToast(
+        etaitCreation ? 'Ajout avec succès.' : 'Modification enregistrée avec succès.',
+        'success'
+      );
       await charger();
     } catch (err) {
       setErreur(err?.backendUnavailable ? '' : err.message);
@@ -346,6 +399,31 @@ export default function ParametrageSecurite({ utilisateur }) {
       await charger();
     } catch (err) {
       setErreur(err?.backendUnavailable ? '' : err.message);
+    }
+  }
+
+  async function changerAuthMode(utilisateurCible, authMode) {
+    const mode = authMode || 'simple';
+    if ((utilisateurCible.auth_mode || 'simple') === mode) return;
+    setAuthEnCours(utilisateurCible.id);
+    setErreur('');
+    try {
+      const res = await apiRequest(`/parametrage/utilisateurs/${utilisateurCible.id}`, {
+        method: 'PUT',
+        priority: true,
+        body: JSON.stringify({ auth_mode: mode }),
+      });
+      const maj = res?.utilisateur;
+      setUtilisateurs((liste) => liste.map((u) => (
+        u.id === utilisateurCible.id
+          ? { ...u, auth_mode: maj?.auth_mode || mode, totp_confirmed: maj?.totp_confirmed ?? u.totp_confirmed }
+          : u
+      )));
+      pushToast(`Auth de ${utilisateurCible.name} : ${LIBELLES_AUTH_MODE[mode] || mode}`, 'success');
+    } catch (err) {
+      setErreur(err?.backendUnavailable ? '' : (err?.message || 'Modification auth impossible.'));
+    } finally {
+      setAuthEnCours(null);
     }
   }
 
@@ -492,51 +570,85 @@ export default function ParametrageSecurite({ utilisateur }) {
               Recherche
               <input value={rechercheUtilisateur} onChange={(event) => { setRechercheUtilisateur(event.target.value); setPageUtilisateur(1); }} placeholder="Email, nom, profil, antenne, direction…" className="mt-1 w-full border border-slate-200 rounded px-2 py-1.5 text-sm" />
             </label>
-            <label className="text-xs text-slate-600">
+            <label className="text-xs text-slate-600 min-w-[160px]">
               Profil
-              <select value={filtreProfilListe} onChange={(event) => { setFiltreProfilListe(event.target.value); setPageUtilisateur(1); }} className="mt-1 block border border-slate-200 rounded px-2 py-1.5 text-sm">
-                <option value="tous">Tous</option>
-                <option value="sans">Sans profil</option>
-                {profils.map((profil) => <option key={profil.id} value={profil.id}>{profil.libelle}</option>)}
-              </select>
+              <ListeChoix
+                valeur={filtreProfilListe}
+                surChangement={(valeur) => { setFiltreProfilListe(valeur || 'tous'); setPageUtilisateur(1); }}
+                texteVide="Tous"
+                options={[
+                  { value: 'tous', label: 'Tous' },
+                  { value: 'sans', label: 'Sans profil' },
+                  ...profils.map((profil) => ({ value: profil.id, label: profil.libelle })),
+                ]}
+              />
             </label>
-            <label className="text-xs text-slate-600">
+            <label className="text-xs text-slate-600 min-w-[120px]">
               État
-              <select value={filtreEtat} onChange={(event) => { setFiltreEtat(event.target.value); setPageUtilisateur(1); }} className="mt-1 block border border-slate-200 rounded px-2 py-1.5 text-sm">
-                <option value="tous">Tous</option>
-                <option value="actif">Actif</option>
-                <option value="inactif">Inactif</option>
-              </select>
+              <ListeChoix
+                valeur={filtreEtat}
+                surChangement={(valeur) => { setFiltreEtat(valeur || 'tous'); setPageUtilisateur(1); }}
+                texteVide="Tous"
+                options={[
+                  { value: 'tous', label: 'Tous' },
+                  { value: 'actif', label: 'Actif' },
+                  { value: 'inactif', label: 'Inactif' },
+                ]}
+              />
             </label>
-            <label className="text-xs text-slate-600">
+            <label className="text-xs text-slate-600 min-w-[160px]">
               Rattachement
-              <select value={filtrePoste} onChange={(event) => { setFiltrePoste(event.target.value); setPageUtilisateur(1); }} className="mt-1 block border border-slate-200 rounded px-2 py-1.5 text-sm">
-                <option value="tous">Tous</option>
-                <option value="antenne">Antenne</option>
-                <option value="direction">Direction</option>
-                <option value="sans">Sans rattachement</option>
-              </select>
+              <ListeChoix
+                valeur={filtrePoste}
+                surChangement={(valeur) => { setFiltrePoste(valeur || 'tous'); setPageUtilisateur(1); }}
+                texteVide="Tous"
+                options={[
+                  { value: 'tous', label: 'Tous' },
+                  { value: 'antenne', label: 'Antenne' },
+                  { value: 'direction', label: 'Direction' },
+                  { value: 'sans', label: 'Sans rattachement' },
+                ]}
+              />
             </label>
-            {peutCreerUtilisateur && <button type="button" onClick={() => setFiche({ type: 'utilisateur', email: '', name: '', profil_id: profils[0]?.id || '', poste_comptable: '', etat: 'actif', password: '', province_rattachement_id: '', antenne_id: '', direction_id: '' })} className="px-3 py-1.5 text-xs font-bold rounded bg-[#00A651] text-white">+ Utilisateur</button>}
+            {peutCreerUtilisateur && <button type="button" onClick={() => setFiche({ type: 'utilisateur', email: '', name: '', profil_id: profils[0]?.id || '', poste_comptable: '', etat: 'actif', auth_mode: 'simple', password: '', province_rattachement_id: '', antenne_id: '', direction_id: '' })} className="px-3 py-1.5 text-xs font-bold rounded bg-[#00A651] text-white">+ Utilisateur</button>}
           </div>
           <table className="w-full text-xs">
-            <thead><tr className="text-left text-slate-500 border-b"><th className="py-2">Email</th><th>Nom</th><th>Profil</th><th>Province</th><th>Antenne</th><th>Direction</th><th>État</th><th></th></tr></thead>
+            <thead><tr className="text-left text-slate-500 border-b"><th className="py-2">Email</th><th>Nom</th><th>Profil</th><th>Auth</th><th>Province</th><th>Antenne</th><th>Direction</th><th>État</th><th></th></tr></thead>
             <tbody>
-              {chargement && <LigneChargementTableau colonnes={8} libelle="Chargement des utilisateurs…" />}
+              {chargement && <LigneChargementTableau colonnes={9} libelle="Chargement des utilisateurs…" />}
               {!chargement && utilisateursPage.length === 0 && (
-                <tr><td colSpan={8} className="py-6 text-center text-slate-500">Aucun utilisateur.</td></tr>
+                <tr><td colSpan={9} className="py-6 text-center text-slate-500">Aucun utilisateur.</td></tr>
               )}
               {!chargement && utilisateursPage.map((item) => (
                 <tr key={item.id} className="border-b border-slate-100">
                   <td className="py-2 pr-2">{item.email}</td>
                   <td className="pr-2">{item.name}</td>
                   <td className="pr-2">{item.profil || '—'}</td>
+                  <td className="pr-2 min-w-[10rem]">
+                    {peutGererAuth ? (
+                      <ListeChoix
+                        valeur={item.auth_mode || 'simple'}
+                        surChangement={(valeur) => {
+                          if (authEnCours === item.id) return;
+                          changerAuthMode(item, valeur || 'simple');
+                        }}
+                        texteVide="Simple"
+                        options={[
+                          { value: 'simple', label: 'Simple (mot de passe)' },
+                          { value: 'otp_email', label: 'OTP par e-mail' },
+                          { value: 'totp', label: 'Google Authenticator' },
+                        ]}
+                      />
+                    ) : (
+                      LIBELLES_AUTH_MODE[item.auth_mode] || 'Simple'
+                    )}
+                  </td>
                   <td className="pr-2">{item.province || '—'}</td>
                   <td className="pr-2">{item.antenne || '—'}</td>
                   <td className="pr-2">{item.direction || '—'}</td>
                   <td className="pr-2">{item.etat}</td>
                   <td className="whitespace-nowrap">
-                    {peutModifierUtilisateur && <BoutonModifier onClick={() => setFiche({ type: 'utilisateur', ...item, password: '' })} />}
+                    {peutModifierUtilisateur && <BoutonModifier onClick={() => setFiche({ type: 'utilisateur', ...item, auth_mode: item.auth_mode || 'simple', password: '' })} />}
                     {peutModifierUtilisateur && item.etat !== 'inactif' && <button type="button" className="text-rose-700" onClick={() => desactiver(item)}>Désactiver</button>}
                   </td>
                 </tr>
@@ -662,10 +774,15 @@ export default function ParametrageSecurite({ utilisateur }) {
               <>
                 <input required type="email" value={fiche.email} onChange={(event) => setFiche({ ...fiche, email: event.target.value })} placeholder="Email" className="w-full border rounded px-2 py-1.5 text-sm" />
                 <input required value={fiche.name} onChange={(event) => setFiche({ ...fiche, name: event.target.value })} placeholder="Nom" className="w-full border rounded px-2 py-1.5 text-sm" />
-                <select required value={fiche.profil_id || ''} onChange={(event) => setFiche({ ...fiche, profil_id: event.target.value })} className="w-full border rounded px-2 py-1.5 text-sm">
-                  <option value="">Profil</option>
-                  {profils.map((profil) => <option key={profil.id} value={profil.id}>{profil.libelle}</option>)}
-                </select>
+                <label className="block text-xs text-slate-600">
+                  Profil *
+                  <ListeChoix
+                    valeur={fiche.profil_id || ''}
+                    surChangement={(valeur) => setFiche({ ...fiche, profil_id: valeur })}
+                    texteVide="Choisir un profil"
+                    options={profils.map((profil) => ({ value: profil.id, label: profil.libelle }))}
+                  />
+                </label>
                 <label className="block text-xs text-slate-600">
                   Province
                   <ListeChoix
@@ -706,10 +823,38 @@ export default function ParametrageSecurite({ utilisateur }) {
                     ]}
                   />
                 </label>
-                <select value={fiche.etat || 'actif'} onChange={(event) => setFiche({ ...fiche, etat: event.target.value })} className="w-full border rounded px-2 py-1.5 text-sm">
-                  <option value="actif">Actif</option>
-                  <option value="inactif">Inactif</option>
-                </select>
+                <label className="block text-xs text-slate-600">
+                  État
+                  <ListeChoix
+                    valeur={fiche.etat || 'actif'}
+                    surChangement={(valeur) => setFiche({ ...fiche, etat: valeur || 'actif' })}
+                    texteVide="Actif"
+                    options={[
+                      { value: 'actif', label: 'Actif' },
+                      { value: 'inactif', label: 'Inactif' },
+                    ]}
+                  />
+                </label>
+                {peutGererAuth ? (
+                  <label className="block text-xs text-slate-600">
+                    Mode d&apos;authentification
+                    <ListeChoix
+                      valeur={fiche.auth_mode || 'simple'}
+                      surChangement={(valeur) => setFiche({ ...fiche, auth_mode: valeur || 'simple' })}
+                      texteVide="Simple"
+                      options={[
+                        { value: 'simple', label: 'Simple — mot de passe uniquement' },
+                        { value: 'otp_email', label: 'OTP envoyé par e-mail' },
+                        { value: 'totp', label: 'Google Authenticator (QR à la 1ʳᵉ connexion)' },
+                      ]}
+                    />
+                    {fiche.auth_mode === 'totp' && fiche.totp_confirmed === false && (
+                      <span className="block mt-1 text-[11px] text-amber-700">QR non encore scanné — demandé à la prochaine connexion.</span>
+                    )}
+                  </label>
+                ) : (
+                  <p className="text-xs text-slate-500">Auth : {LIBELLES_AUTH_MODE[fiche.auth_mode] || 'Simple'} (modifiable par Super Admin / Admin Métier)</p>
+                )}
                 <input type="password" value={fiche.password || ''} onChange={(event) => setFiche({ ...fiche, password: event.target.value })} placeholder={fiche.id ? 'Nouveau mot de passe (optionnel)' : 'Mot de passe'} className="w-full border rounded px-2 py-1.5 text-sm" />
               </>
             )}

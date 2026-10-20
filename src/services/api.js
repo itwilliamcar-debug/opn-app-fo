@@ -49,10 +49,78 @@ export class ApiError extends Error {
 let loginHold = 0;
 let authGeneration = 0;
 let authController = null;
+let authFlight = null;
 const backgroundControllers = new Set();
+
+/**
+ * php artisan serve ne traite qu'une requête à la fois.
+ * Les sondes (visio, flux, présence, snapshot) ne s'empilent plus :
+ * une seule à la fois, et la connexion passe devant.
+ */
+function installApiLane() {
+  if (typeof window === 'undefined') return;
+  const native = window.__opnNativeFetch || window.fetch.bind(window);
+  window.__opnNativeFetch = native;
+  let running = null;
+  const waiters = [];
+
+  const isOurApi = (input) => {
+    const url = typeof input === 'string' ? input : (input?.url || '');
+    return url.includes('127.0.0.1:8002') || url.includes('/api/v1/');
+  };
+
+  const isPoll = (url, method) => (
+    /\/(realtime\/snapshot|connect\/visio\/incoming|presence\/(?:heartbeat|online)|site)(\?|$)/.test(url)
+    || (/\/flux\/commandes(\?|$)/.test(url) && method === 'GET')
+  );
+
+  const pump = () => {
+    if (running || waiters.length === 0) return;
+    const job = waiters.shift();
+    const controller = new AbortController();
+    const token = {};
+    running = { abort: controller, poll: job.poll, token };
+    const signal = job.init.signal && typeof AbortSignal?.any === 'function'
+      ? AbortSignal.any([job.init.signal, controller.signal])
+      : controller.signal;
+    native(job.input, { ...job.init, signal }).then(job.resolve, job.reject).finally(() => {
+      if (running?.token === token) running = null;
+      pump();
+    });
+  };
+
+  window.fetch = (input, init = {}) => {
+    if (!isOurApi(input)) return native(input, init);
+    const url = typeof input === 'string' ? input : (input?.url || '');
+    const { opnPriority, ...rest } = init;
+    const method = String(rest.method || 'GET').toUpperCase();
+    const poll = !opnPriority && isPoll(url, method);
+    if (poll && (window.__opnLoginHeld || running?.poll || waiters.some((job) => job.poll))) {
+      return Promise.reject(new DOMException('Skipped', 'AbortError'));
+    }
+    return new Promise((resolve, reject) => {
+      const job = { input, init: rest, poll, resolve, reject };
+      if (opnPriority) {
+        for (let i = waiters.length - 1; i >= 0; i -= 1) {
+          if (!waiters[i].poll) continue;
+          waiters[i].reject(new DOMException('Skipped', 'AbortError'));
+          waiters.splice(i, 1);
+        }
+        waiters.unshift(job);
+        if (running?.poll) running.abort.abort();
+      } else {
+        waiters.push(job);
+      }
+      pump();
+    });
+  };
+}
+
+installApiLane();
 
 function pauseBackgroundForLogin() {
   loginHold += 1;
+  window.__opnLoginHeld = true;
   if (loginHold !== 1) return;
   for (const controller of backgroundControllers) {
     try { controller.abort(); } catch { /* déjà clos */ }
@@ -62,6 +130,7 @@ function pauseBackgroundForLogin() {
 
 function resumeBackgroundAfterLogin() {
   loginHold = Math.max(0, loginHold - 1);
+  window.__opnLoginHeld = loginHold > 0;
 }
 
 async function withLoginPriority(run) {
@@ -134,20 +203,29 @@ export async function apiRequest(path, options = {}) {
   }
   const controller = new AbortController();
   if (!priority) backgroundControllers.add(controller);
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
 
   let response;
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...fetchOptions,
       signal: controller.signal,
+      ...(priority ? { opnPriority: true } : {}),
       headers: {
         ...getHeaders(),
         ...(fetchOptions.headers || {}),
       },
     });
   } catch (error) {
-    if (error?.name === 'AbortError' && loginHold > 0) {
+    if (error?.name === 'AbortError') {
+      if (timedOut && loginHold === 0) {
+        notifyBackendDown();
+        throw new ApiError('', { status: 0, backendUnavailable: true });
+      }
       throw new ApiError('', { status: 0, skipped: true });
     }
     if (isTransportError(error)) {
@@ -183,14 +261,30 @@ export async function apiRequest(path, options = {}) {
 /**
  * Authentification Utilisateur (Sanctum)
  */
-async function postAuth(path, body, timeoutMs, headers) {
+function startAuth(run) {
+  if (authFlight) return Promise.resolve({ success: false, skipped: true });
+  const flight = withLoginPriority(run).finally(() => {
+    if (authFlight === flight) authFlight = null;
+  });
+  authFlight = flight;
+  return flight;
+}
+
+async function postAuth(path, body, timeoutMs) {
   const { controller, generation, timer } = armAuthSignal(timeoutMs);
+  const fields = Object.fromEntries(
+    Object.entries(body).filter(([, value]) => value !== undefined && value !== null).map(([key, value]) => [key, String(value)])
+  );
   try {
     const response = await fetch(`${API_BASE_URL}${path}`, {
       method: 'POST',
-      headers,
-      body: JSON.stringify(body),
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'application/json',
+      },
+      body: new URLSearchParams(fields).toString(),
       signal: controller.signal,
+      opnPriority: true,
     });
     const data = await response.json().catch(() => ({}));
     if (generation !== authGeneration) return { success: false, skipped: true };
@@ -208,21 +302,16 @@ async function postAuth(path, body, timeoutMs, headers) {
 }
 
 export async function loginUser(email, password) {
-  return withLoginPriority(async () => {
-    const headers = getHeaders();
+  return startAuth(async () => {
     try {
-      return await postAuth('/auth/login', { email, password }, 20000, headers);
+      return await postAuth('/auth/login', { email, password }, 45000);
     } catch (error) {
+      if (error?.name === 'AbortError') return { success: false, skipped: true };
       if (!isTransportError(error)) {
         return { success: false, message: error.message || 'Connexion impossible.' };
       }
-      try {
-        await new Promise((resolve) => setTimeout(resolve, 400));
-        return await postAuth('/auth/login', { email, password }, 20000, headers);
-      } catch {
-        notifyBackendDown();
-        return { success: false, backendUnavailable: true, message: '' };
-      }
+      notifyBackendDown();
+      return { success: false, backendUnavailable: true, message: '' };
     }
   });
 }
@@ -235,41 +324,54 @@ export async function loginUser(email, password) {
  * 1 retry automatique si l’API démarre encore / worker froid.
  */
 export async function demoQuickLogin(email) {
-  return withLoginPriority(async () => {
-    const headers = {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    };
+  return startAuth(async () => {
     try {
-      return await postAuth('/auth/demo-quick', { email }, 20000, headers);
+      return await postAuth('/auth/demo-quick', { email }, 45000);
     } catch (error) {
+      if (error?.name === 'AbortError') return { success: false, skipped: true };
       if (!isTransportError(error)) {
         return { success: false, message: error?.message || 'Connexion impossible.' };
       }
-      try {
-        await new Promise((resolve) => setTimeout(resolve, 400));
-        return await postAuth('/auth/demo-quick', { email }, 20000, headers);
-      } catch {
-        notifyBackendDown();
-        return { success: false, backendUnavailable: true, message: '' };
-      }
+      notifyBackendDown();
+      return { success: false, backendUnavailable: true, message: '' };
     }
   });
 }
 
 /**
- * Validation Code 2FA
+ * Validation Code 2FA (OTP e-mail ou Google Authenticator)
  */
-export async function verify2FA(email, code) {
-  return withLoginPriority(async () => {
+export async function verify2FA(email, code, authChallenge = null) {
+  return startAuth(async () => {
     try {
-      return await postAuth('/auth/verify-2fa', { email, code }, 20000, getHeaders());
+      const body = { email, code };
+      if (authChallenge) body.auth_challenge = authChallenge;
+      return await postAuth('/auth/verify-2fa', body, 45000);
     } catch (error) {
+      if (error?.name === 'AbortError') return { success: false, skipped: true };
       if (isTransportError(error)) {
         notifyBackendDown();
         return { success: false, backendUnavailable: true, message: '' };
       }
       return { success: false, message: error.message || 'Vérification impossible.' };
+    }
+  });
+}
+
+/**
+ * Première activation Google Authenticator (scan QR + code)
+ */
+export async function confirmTotpSetup(email, password, code) {
+  return startAuth(async () => {
+    try {
+      return await postAuth('/auth/confirm-totp', { email, password, code }, 45000);
+    } catch (error) {
+      if (error?.name === 'AbortError') return { success: false, skipped: true };
+      if (isTransportError(error)) {
+        notifyBackendDown();
+        return { success: false, backendUnavailable: true, message: '' };
+      }
+      return { success: false, message: error.message || 'Activation TOTP impossible.' };
     }
   });
 }
@@ -673,6 +775,37 @@ export async function downloadApproDocument(id, version = null) {
   const disposition = response.headers.get('Content-Disposition') || '';
   const match = disposition.match(/filename="?([^";]+)"?/i);
   return { blob, filename: match?.[1] || `document-${id}` };
+}
+
+/** PDF BC / facture flux — généré côté backend (filigrane OPN). */
+export async function downloadFluxDocumentPdf(id) {
+  const headers = { Accept: 'application/pdf' };
+  const token = getAuthToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(`${API_BASE_URL}/flux/documents/${id}/pdf`, { headers });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new ApiError(data?.message || `Téléchargement PDF refusé (${response.status})`, { status: response.status, data });
+  }
+  const blob = await response.blob();
+  const disposition = response.headers.get('Content-Disposition') || '';
+  const match = disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i)
+    || disposition.match(/filename="?([^";]+)"?/i);
+  let filename = match?.[1] ? decodeURIComponent(match[1].trim()) : `document-${id}.pdf`;
+  if (!filename.toLowerCase().endsWith('.pdf')) filename = `${filename}.pdf`;
+  return { blob, filename };
+}
+
+export function triggerBlobDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename || 'document.pdf';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
 /** Suggestions DG */

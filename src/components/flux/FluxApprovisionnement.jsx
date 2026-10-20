@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Info, Loader2, Plus, RefreshCw, Search, X } from 'lucide-react';
-import { LigneChargementTableau } from '../common/SpinnerPourcentage';
+import { ChevronDown, ChevronRight, FileText, Info, Loader2, Plus, Receipt, RefreshCw, Search, X } from 'lucide-react';
 import { BoutonSupprimer, BoutonVoir } from '../common/BoutonsActionsTableau';
 import { apiRequest } from '../../services/api';
 import { askConfirm, pushToast } from '../../services/toastBus';
 import { droit, getCodeRole, getFluxStage, libelleDroits } from '../../data/rbacMatrix';
+import FluxDocumentsPanel from './FluxDocumentsPanel';
+import FluxPiecePdfModal from './FluxPiecePdfModal';
 
 const STATUTS = {
   SOUMISE_ANTENNE: 'Reçue par l\'antenne',
@@ -60,10 +61,124 @@ const STATUT_STYLE = {
 };
 
 const STEPS = [
-  { id: 'commande', titre: '1. Commande', texte: 'La pharmacie ou le partenaire initie la demande auprès de son antenne.' },
-  { id: 'antenne', titre: '2. Antenne', texte: 'Le chef d\'antenne consulte les demandes de sa localité et les transfère au siège (sans prise en charge des quantités).' },
-  { id: 'siege', titre: '3. Siège (Direction générale)', texte: 'La Direction générale centralise par année et par mois. À l’intérieur : l’antenne qui a transféré, puis le demandeur — ou l’antenne elle-même si c’est elle qui a commandé. L’admin métier et le super admin voient la même centralisation.' },
+  { id: 'commande', titre: '1. Commande', texte: 'Le demandeur initie la commande. Son statut est « Commande envoyée à l\'antenne ».' },
+  { id: 'antenne', titre: '2. Antenne', texte: 'L\'antenne voit « Commande reçue du demandeur », ou « Commande générée par l\'antenne » si c\'est elle qui a commandé. Elle transfère ensuite au siège.' },
+  { id: 'siege', titre: '3. Siège (Direction générale)', texte: 'Le siège voit d\'abord « Commande envoyée à l\'antenne » (ou « Commande générée par l\'antenne »), puis « Commande transférée par l\'antenne ».' },
+  { id: 'prise', titre: '4. Prise en charge', texte: 'Le siège engage les quantités disponibles. Le reliquat reste ouvert pour un prochain arrivage.' },
+  { id: 'dispersion', titre: '5. Dispersion', texte: 'Le siège envoie (dispense) les quantités prises en charge vers l\'antenne / le demandeur.' },
 ];
+
+/** Explications des filtres / statuts visibles sur la page siège. */
+const EXPLICATIONS_FILTRES_SIEGE = [
+  { id: 'tous', titre: 'Toutes', texte: 'Toutes les commandes visibles au siège, quel que soit leur avancement.' },
+  { id: 'EN_ATTENTE', titre: 'En attente', texte: 'Commandes transférées par l\'antenne et pas encore prises en charge par le siège. Elles attendent une décision (prise en charge ou rejet).' },
+  { id: 'RELIQUAT', titre: 'Reliquats', texte: 'Commandes partiellement prises en charge : une partie des quantités a été engagée, le reste (reliquat) reste à traiter au prochain arrivage.' },
+  { id: 'SATISFAITE', titre: 'Satisfaites', texte: 'Commandes entièrement dispersées : toutes les quantités prises en charge ont été envoyées. Le cycle est terminé.' },
+  { id: 'PRISE', titre: 'Prises en charge', texte: 'Commandes déjà engagées par le siège (totale ou partielle), y compris celles encore à disperser ou avec un reliquat ouvert.' },
+  { id: 'REJETEE', titre: 'Rejetées', texte: 'Commandes refusées par le siège. Elles ne seront pas honorées dans cet état.' },
+];
+
+/** Explications des filtres / statuts visibles côté antenne / demandeur. */
+const EXPLICATIONS_FILTRES_ANTENNE = [
+  { id: 'tous', titre: 'Toutes', texte: 'Toutes vos commandes / demandes, quel que soit leur avancement.' },
+  { id: 'RECUE', titre: 'À transférer', texte: 'Demandes reçues à l\'antenne (ou générées par le chef) et pas encore envoyées au siège.' },
+  { id: 'SIEGE', titre: 'Transférées', texte: 'Commandes déjà transmises au siège. Elles sont en cours de traitement national (attente, prise en charge, dispersion…).' },
+  { id: 'DISPERSEE', titre: 'Satisfaites', texte: 'Commandes entièrement dispersées par le siège : les quantités ont été livrées / envoyées.' },
+  { id: 'REJETEE', titre: 'Rejetées', texte: 'Commandes refusées (par l\'antenne ou par le siège).' },
+];
+
+const STATUTS_SUITE = ['PARTIELLEMENT_TRANSMISE', 'PARTIELLEMENT_ARCHIVEE', 'TRANSMISE_SIEGE', 'PARTIELLEMENT_DISPERSEE', 'DISPERSEE', 'REJETEE_SIEGE', 'REJETEE_ANTENNE'];
+
+/** La commande a été créée par le chef d'antenne, pas par un demandeur. */
+function genereeParAntenne(commande) {
+  return Boolean(commande?.initiee_par_antenne) || commande?.partenaire_type === 'ANTENNE' || commande?.statut === 'EFFECTUEE_CHEF_ANTENNE';
+}
+
+/** La commande a été passée par la Direction générale. */
+function deLaDirectionGenerale(commande) {
+  return Boolean(commande?.initiee_par_direction_generale) || commande?.partenaire_type === 'DIRECTION_GENERALE';
+}
+
+function nomAntenneCommande(commande) {
+  return commande?.antenne?.nom || '';
+}
+
+function rangOrigine(type) {
+  if (type === 'direction_generale') return '0';
+  if (type === 'antenne') return '1';
+  return '2';
+}
+
+function libelleOrigine(origine) {
+  if (origine.type === 'direction_generale') return 'Commande de la Direction générale';
+  if (origine.type === 'antenne') return 'Commande générée par l’antenne';
+  return origine.nom;
+}
+
+/**
+ * Libellés de statut selon l'interface.
+ * Demandeur : envoyée à l'antenne.
+ * Antenne : reçue du demandeur, ou générée par l'antenne.
+ * Siège : d'abord l'envoi (ou la génération), puis le transfert vers le siège.
+ */
+function parcoursStatut(commande, stage) {
+  const parAntenne = genereeParAntenne(commande);
+  const parDg = deLaDirectionGenerale(commande);
+  const transferee = STATUTS_AU_SIEGE.includes(commande?.statut)
+    || commande?.statut === 'REJETEE_SIEGE'
+    || Boolean(commande?.transferee_au_siege_at);
+  const antenneNom = nomAntenneCommande(commande);
+
+  const styleDg = 'bg-[#0E2A4F]/10 text-[#0E2A4F] border-[#0E2A4F]/30';
+  const envoyee = { id: 'envoi', label: 'Commande envoyée à l\'antenne', style: STATUT_STYLE.SOUMISE_ANTENNE };
+  const recue = { id: 'recue', label: 'Commande reçue du demandeur', style: STATUT_STYLE.SOUMISE_ANTENNE };
+  const generee = { id: 'generee', label: 'Commande générée par l\'antenne', style: STATUT_STYLE.EFFECTUEE_CHEF_ANTENNE };
+  const dg = { id: 'dg', label: 'Commande de la Direction générale', style: styleDg };
+  const recueDg = { id: 'recue-dg', label: 'Commande reçue de la Direction générale', style: styleDg };
+  const transfert = {
+    id: 'transfert',
+    label: antenneNom ? `Commande transférée par l'antenne ${antenneNom}` : 'Commande transférée par l\'antenne',
+    style: STATUT_STYLE.TRANSFEREE_SIEGE,
+  };
+
+  let etapes;
+  if (stage === 'commande') {
+    etapes = [envoyee];
+  } else if (stage === 'antenne') {
+    etapes = [parDg ? recueDg : (parAntenne ? generee : recue)];
+  } else {
+    etapes = [parDg ? dg : (parAntenne ? generee : envoyee)];
+  }
+
+  if (transferee) etapes.push({ ...transfert });
+
+  if (STATUTS_SUITE.includes(commande?.statut)) {
+    etapes.push({
+      id: commande.statut,
+      label: STATUTS[commande.statut] || commande.statut,
+      style: STATUT_STYLE[commande.statut] || 'bg-slate-100 text-slate-700 border-slate-200',
+    });
+  }
+
+  if (etapes.length > 1) {
+    etapes = etapes.map((etape, index) => ({ ...etape, label: `${index + 1}. ${etape.label}` }));
+  }
+
+  return etapes;
+}
+
+function PastillesStatut({ commande, stage, compact = false }) {
+  const etapes = parcoursStatut(commande, stage);
+  return (
+    <div className="flex flex-col items-start gap-1">
+      {etapes.map((etape) => (
+        <span key={etape.id} className={`inline-flex px-2 py-0.5 rounded border font-bold leading-tight ${compact ? 'text-[10px]' : ''} ${etape.style || ''}`}>
+          {etape.label}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 const STATUTS_A_TRANSFERER = ['SOUMISE_ANTENNE', 'EFFECTUEE_CHEF_ANTENNE'];
 const STATUTS_AU_SIEGE = ['TRANSFEREE_SIEGE', 'TRANSMISE_SIEGE', 'PARTIELLEMENT_DISPERSEE', 'PARTIELLEMENT_TRANSMISE', 'PARTIELLEMENT_ARCHIVEE', 'DISPERSEE'];
@@ -89,8 +204,102 @@ function suiviQuantites(commande) {
   }, { demande: 0, pris: 0, archive: 0 });
 }
 
-/** Nombre de lignes proposées dans la pagination du tableau. */
-const TAILLES_PAGE = [3, 5, 10, 20];
+/** Tailles de page pour la liste en cartes (tous profils). */
+const TAILLES_PAGE = [5, 10, 20, 50];
+
+const LIBELLES_MOIS = [
+  '', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+  'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre',
+];
+
+/** Hiérarchie année → mois → antenne → demandeur à partir d’une liste de commandes. */
+function construireHierarchieCommandes(liste) {
+  const anneeMoisDe = (commande) => {
+    const ref = commande.transferee_au_siege_at || commande.created_at || commande.date_commande;
+    const d = ref ? new Date(ref) : new Date();
+    if (Number.isNaN(d.getTime())) {
+      const now = new Date();
+      return { annee: now.getFullYear(), mois: now.getMonth() + 1 };
+    }
+    return { annee: d.getFullYear(), mois: d.getMonth() + 1 };
+  };
+
+  const parAnnee = new Map();
+  (liste || []).forEach((commande) => {
+    const { annee, mois } = anneeMoisDe(commande);
+    if (!parAnnee.has(annee)) parAnnee.set(annee, new Map());
+    const parMois = parAnnee.get(annee);
+    if (!parMois.has(mois)) parMois.set(mois, new Map());
+    const parAntenne = parMois.get(mois);
+    const antenneId = String(commande.antenne_id || commande.antenne?.id || 0);
+    if (!parAntenne.has(antenneId)) {
+      parAntenne.set(antenneId, {
+        antenne_id: Number(antenneId) || 0,
+        antenne_nom: commande.antenne?.nom || (antenneId !== '0' ? `Antenne #${antenneId}` : 'Antenne'),
+        chef_lieu: commande.antenne?.chef_lieu || null,
+        origines: new Map(),
+      });
+    }
+    const antenne = parAntenne.get(antenneId);
+    const parDg = deLaDirectionGenerale(commande);
+    const parAntenneCmd = !parDg && ((commande.partenaire_type || '') === 'ANTENNE' || commande.initiee_par_antenne);
+    const cleOrigine = parDg
+      ? 'direction_generale'
+      : (parAntenneCmd
+        ? 'antenne'
+        : `demandeur:${commande.demandeur_user_id || String(commande.demandeur_nom || 'n/a').toLowerCase()}`);
+    if (!antenne.origines.has(cleOrigine)) {
+      antenne.origines.set(cleOrigine, {
+        cle: cleOrigine,
+        type: parDg ? 'direction_generale' : (parAntenneCmd ? 'antenne' : 'demandeur'),
+        nom: parDg ? 'Direction générale' : (commande.demandeur_nom || (parAntenneCmd ? 'Antenne' : 'Demandeur')),
+        role: commande.demandeur_role || '',
+        partenaire_nom: commande.partenaire_nom || '',
+        commandes: [],
+      });
+    }
+    antenne.origines.get(cleOrigine).commandes.push(commande);
+  });
+
+  return [...parAnnee.entries()]
+    .sort((a, b) => b[0] - a[0])
+    .map(([annee, parMois]) => {
+      const mois = [...parMois.entries()]
+        .sort((a, b) => b[0] - a[0])
+        .map(([moisNum, parAntenne]) => {
+          const antennes = [...parAntenne.values()]
+            .map((antenne) => {
+              const origines = [...antenne.origines.values()]
+                .map((o) => ({ ...o, nb_commandes: o.commandes.length }))
+                .sort((a, b) => rangOrigine(a.type).localeCompare(rangOrigine(b.type)) || a.nom.localeCompare(b.nom, 'fr'));
+              const commandesAntenne = origines.flatMap((o) => o.commandes);
+              return {
+                antenne_id: antenne.antenne_id,
+                antenne_nom: antenne.antenne_nom,
+                chef_lieu: antenne.chef_lieu,
+                nb_commandes: commandesAntenne.length,
+                en_attente: commandesAntenne.filter((c) => c.statut === 'TRANSFEREE_SIEGE').length,
+                reliquats: commandesAntenne.filter((c) => c.statut === 'PARTIELLEMENT_ARCHIVEE').length,
+                satisfaites: commandesAntenne.filter((c) => c.statut === 'DISPERSEE').length,
+                transferee_par: [...new Set(commandesAntenne.map((c) => c.transferee_au_siege_par_nom).filter(Boolean))],
+                origines,
+              };
+            })
+            .sort((a, b) => a.antenne_nom.localeCompare(b.antenne_nom, 'fr'));
+          return {
+            mois: moisNum,
+            libelle: LIBELLES_MOIS[moisNum] || String(moisNum),
+            nb_commandes: antennes.reduce((n, a) => n + a.nb_commandes, 0),
+            antennes,
+          };
+        });
+      return {
+        annee,
+        nb_commandes: mois.reduce((n, m) => n + m.nb_commandes, 0),
+        mois,
+      };
+    });
+}
 
 /** Formate un montant en francs CFA. */
 function formaterMontant(valeur) {
@@ -245,11 +454,9 @@ export default function FluxApprovisionnement({ activePersona }) {
     total: 0, recues: 0, transmises: 0, dispersees: 0, archivees: 0,
     en_attente: 0, satisfaites: 0, reliquats: 0, transferees: 0,
   });
-  const [groupees, setGroupees] = useState([]);
-  const [anneeOuverte, setAnneeOuverte] = useState(null);
-  const [moisOuvert, setMoisOuvert] = useState(null);
-  const [antenneOuverte, setAntenneOuverte] = useState(null);
-  const [origineOuverte, setOrigineOuverte] = useState(null);
+  /** Années repliées (tout déplié par défaut — seul l’année se plie). */
+  const [anneesRepliees, setAnneesRepliees] = useState(() => new Set());
+  const [ongletFlux, setOngletFlux] = useState('commandes'); // commandes | bons | factures
   const [transfertEnCours, setTransfertEnCours] = useState(null);
   const [antenneCompte, setAntenneCompte] = useState(null);
   const [structureCompte, setStructureCompte] = useState('');
@@ -267,7 +474,7 @@ export default function FluxApprovisionnement({ activePersona }) {
   const [recherche, setRecherche] = useState('');
   const [filtre, setFiltre] = useState('tous');
   const [ligneOuverte, setLigneOuverte] = useState(null);
-  const [taillePage, setTaillePage] = useState(5);
+  const [taillePage, setTaillePage] = useState(20);
   const [pageCourante, setPageCourante] = useState(1);
   const [aideOuverte, setAideOuverte] = useState(false);
   const [peutSupprimer, setPeutSupprimer] = useState(false);
@@ -275,6 +482,8 @@ export default function FluxApprovisionnement({ activePersona }) {
   const [quantitesAction, setQuantitesAction] = useState({});
   const [noteAction, setNoteAction] = useState('');
   const [savingAction, setSavingAction] = useState(false);
+  const [piecePdf, setPiecePdf] = useState(null);
+  const [docsRefreshKey, setDocsRefreshKey] = useState(0);
 
   const codeRoleCompte = role || activePersona?.codeRole || activePersona?.code_role;
   const estChefAntenne = ['CHEF_ANTENNE_PROVINCIALE', 'PHARMACIEN_CHEF_ANTENNE'].includes(codeRoleCompte);
@@ -296,7 +505,9 @@ export default function FluxApprovisionnement({ activePersona }) {
         : 'Chaîne d\'approvisionnement';
   const estDemandeur = stage === 'commande';
   const estVueSiege = stage === 'siege' || stage === 'supervision';
-  const peutCommander = estDemandeur || ((stage === 'antenne' || stage === 'supervision') && droit(activePersona, 'flux', 'creer'));
+  const peutCommander = estDemandeur
+    || estDirectionGenerale
+    || ((stage === 'antenne' || stage === 'supervision') && droit(activePersona, 'flux', 'creer'));
   const peutTransferer = (stage === 'antenne' || stage === 'supervision') && droit(activePersona, 'flux', 'modifier');
   const peutPrendreCharge = estVueSiege && (droit(activePersona, 'flux', 'modifier') || droit(activePersona, 'flux', 'valider'));
   const peutDisperser = estVueSiege && droit(activePersona, 'flux', 'valider');
@@ -318,7 +529,6 @@ export default function FluxApprovisionnement({ activePersona }) {
         setStage(flux.stage || localStage);
         setCommandes(flux.commandes || []);
         setCompteurs(flux.compteurs || {});
-        setGroupees(flux.groupees || []);
         setAntenneCompte(flux.antenne_compte || null);
         setStructureCompte(flux.structure_compte || '');
         setPeutSupprimer(Boolean(flux.peut_supprimer));
@@ -329,7 +539,6 @@ export default function FluxApprovisionnement({ activePersona }) {
         setStage(flux.stage || localStage);
         setCommandes(flux.commandes || []);
         setCompteurs(flux.compteurs || {});
-        setGroupees(flux.groupees || []);
         setAntenneCompte(flux.antenne_compte || null);
         setStructureCompte(flux.structure_compte || '');
         setPeutSupprimer(Boolean(flux.peut_supprimer));
@@ -374,14 +583,16 @@ export default function FluxApprovisionnement({ activePersona }) {
   const antenneParDefaut = (antenneCompte && String(antenneCompte.id) === String(antenneId || antenneCompte.id) ? antenneCompte : null)
     || antennes.find((antenne) => String(antenne.id) === String(antenneDuCompte || antenneCompte?.id))
     || antenneCompte;
-  const antenneVerrouillee = Boolean(antenneParDefaut) && (estDemandeur || estChefAntenne || antenneImposee);
+  const antenneVerrouillee = !estDirectionGenerale && Boolean(antenneParDefaut) && (estDemandeur || estChefAntenne || antenneImposee);
   const libelleAntenneDefaut = antenneParDefaut
     ? [antenneParDefaut.nom, antenneParDefaut.chef_lieu].filter(Boolean).join(' — ')
     : '';
 
-  /** Demandeur = sa structure ; chef = demande à son propre nom. */
+  /** Demandeur = sa structure ; chef = à son nom ; Direction générale = vers l'antenne choisie. */
   function ouvrirDemande() {
-    if (estChefAntenne) {
+    if (estDirectionGenerale) {
+      setPartenaire('Direction générale');
+    } else if (estChefAntenne) {
       setPartenaire(nomChef);
     } else {
       const structure = structureCompte || activePersona?.entite || activePersona?.structure || '';
@@ -431,9 +642,9 @@ export default function FluxApprovisionnement({ activePersona }) {
       await apiRequest('/flux/commandes', {
         method: 'POST',
         body: JSON.stringify({
-          antenne_id: Number(antenneCompte?.id || antenneDuCompte || antenneId),
-          partenaire_nom: estChefAntenne ? nomChef : partenaire,
-          partenaire_type: estChefAntenne ? 'ANTENNE' : 'PHARMACIE',
+          antenne_id: Number(estDirectionGenerale ? antenneId : (antenneCompte?.id || antenneDuCompte || antenneId)),
+          partenaire_nom: estDirectionGenerale ? 'Direction générale' : (estChefAntenne ? nomChef : partenaire),
+          partenaire_type: estDirectionGenerale ? 'DIRECTION_GENERALE' : (estChefAntenne ? 'ANTENNE' : 'PHARMACIE'),
           motif,
           lignes: lignesSelections,
         }),
@@ -530,10 +741,18 @@ export default function FluxApprovisionnement({ activePersona }) {
     setError('');
     try {
       if (type === 'prise') {
-        await apiRequest(`/flux/commandes/${commande.id}/transmettre`, {
+        const res = await apiRequest(`/flux/commandes/${commande.id}/transmettre`, {
           method: 'POST',
           body: JSON.stringify({ lignes, note: noteAction || undefined }),
         });
+        const bc = res?.bon_commande?.numero;
+        const fac = res?.facture?.numero;
+        pushToast(
+          bc && fac
+            ? `Prise en charge OK — BC ${bc} et facture ${fac} générés.`
+            : `Prise en charge enregistrée pour ${commande.numero_commande}.`
+        );
+        setDocsRefreshKey((k) => k + 1);
       } else {
         await apiRequest(`/flux/commandes/${commande.id}/disperser`, {
           method: 'POST',
@@ -542,9 +761,9 @@ export default function FluxApprovisionnement({ activePersona }) {
             note_dispersion: noteAction || undefined,
           }),
         });
+        pushToast(`Dispersion enregistrée pour ${commande.numero_commande}.`);
       }
       setModalAction(null);
-      pushToast(type === 'prise' ? `Prise en charge enregistrée pour ${commande.numero_commande}.` : `Dispersion enregistrée pour ${commande.numero_commande}.`);
       await load();
     } catch (err) {
       setError(err?.backendUnavailable ? '' : err.message);
@@ -619,22 +838,29 @@ export default function FluxApprovisionnement({ activePersona }) {
         commande.partenaire_type,
         commande.note_dispersion,
         STATUTS[commande.statut],
+        ...parcoursStatut(commande, stage).map((etape) => etape.label),
         ...(commande.lignes || []).map((row) => row.designation),
       ].filter(Boolean).join(' ').toLowerCase();
       return texte.includes(q);
     });
-  }, [commandes, recherche, filtre]);
+  }, [commandes, recherche, filtre, stage]);
 
   /* Revenir à la première page dès que le filtre, la recherche ou la taille changent. */
   useEffect(() => {
     setPageCourante(1);
-  }, [recherche, filtre, taillePage]);
+  }, [recherche, filtre, taillePage, ongletFlux]);
 
   const nombrePages = Math.max(1, Math.ceil(commandesVisibles.length / taillePage));
   const pageAffichee = Math.min(pageCourante, nombrePages);
   const commandesPage = commandesVisibles.slice((pageAffichee - 1) * taillePage, pageAffichee * taillePage);
 
   const commandeDetail = commandes.find((commande) => commande.id === ligneOuverte) || null;
+
+  /** Même disposition pour siège, chef d’antenne et demandeur — sur la page courante. */
+  const hierarchiePage = useMemo(
+    () => construireHierarchieCommandes(commandesPage),
+    [commandesPage],
+  );
 
   function compteFiltre(id) {
     if (id === 'tous') return commandes.length;
@@ -661,9 +887,80 @@ export default function FluxApprovisionnement({ activePersona }) {
     return { aTransferer, aPrendre, aDisperser, aRejeter };
   }
 
+  function basculerAnnee(annee) {
+    setAnneesRepliees((prev) => {
+      const next = new Set(prev);
+      if (next.has(annee)) next.delete(annee);
+      else next.add(annee);
+      return next;
+    });
+  }
+
+  function CarteCommande({ commande }) {
+    const lignes = commande.lignes || [];
+    const suivi = commande.quantites || suiviQuantites(commande);
+    const act = actionsCommande(commande);
+    return (
+      <div className="flex flex-wrap items-start justify-between gap-2 px-3 py-2.5 border border-slate-200 rounded-md bg-white text-xs hover:bg-slate-50/80">
+        <div className="min-w-0 space-y-0.5 flex-1">
+          <p className="font-bold text-slate-900">{commande.numero_commande}</p>
+          <p className="text-slate-700">
+            {deLaDirectionGenerale(commande)
+              ? `Commande de la Direction générale, passée à l’antenne ${nomAntenneCommande(commande) || 'de réception'}`
+              : genereeParAntenne(commande)
+                ? `Commande générée par l’antenne ${nomAntenneCommande(commande) || ''}`.trim()
+                : `Commande de ${commande.demandeur_nom || 'demandeur'}, passée à l’antenne ${nomAntenneCommande(commande) || 'de réception'}`}
+          </p>
+          {commande.transferee_au_siege_par_nom && (
+            <p className="text-[10px] text-amber-700">
+              Transférée à la Direction générale par {commande.transferee_au_siege_par_nom}
+              {nomAntenneCommande(commande) ? ` (${nomAntenneCommande(commande)})` : ''}
+            </p>
+          )}
+          <p className="text-[10px] text-slate-500 truncate max-w-xl">
+            {lignes.map((row) => `${row.designation} (${row.quantite_demandee})`).join(', ') || '—'}
+          </p>
+          <p className="text-[10px] text-slate-600">
+            Dem. <span className="font-semibold">{suivi.demandee ?? suivi.demande}</span>
+            {' · '}Pris <span className="font-semibold text-emerald-800">{suivi.prise ?? suivi.pris}</span>
+            {' · '}Rel. <span className="font-semibold text-violet-800">{suivi.reliquat ?? suivi.archive}</span>
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1.5 shrink-0">
+          <PastillesStatut commande={commande} stage={stage} compact />
+          <div className="flex flex-wrap justify-end gap-1">
+            <BoutonVoir titre="Voir le détail" onClick={() => setLigneOuverte(commande.id)} />
+            {peutSupprimer && (
+              <BoutonSupprimer titre="Supprimer la commande" onClick={() => supprimerCommande(commande)} />
+            )}
+            {act.aTransferer && (
+              <button
+                type="button"
+                disabled={transfertEnCours === commande.id}
+                onClick={() => transfererAuSiege(commande)}
+                className="px-2 py-1 font-bold rounded bg-amber-600 text-white disabled:opacity-60"
+              >
+                {transfertEnCours === commande.id ? 'Transfert…' : 'Transférer au siège'}
+              </button>
+            )}
+            {act.aPrendre && (
+              <button type="button" onClick={() => ouvrirAction('prise', commande)} className="px-2 py-1 font-bold rounded bg-[#2E68B4] text-white">Prendre en charge</button>
+            )}
+            {act.aDisperser && (
+              <button type="button" onClick={() => ouvrirAction('dispersion', commande)} className="px-2 py-1 font-bold rounded bg-[#0E2A4F] text-white">Disperser</button>
+            )}
+            {act.aRejeter && (
+              <button type="button" onClick={() => rejeter(commande)} className="px-2 py-1 font-bold rounded border border-rose-300 text-rose-700">Rejeter</button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex-1 min-h-0 flex flex-col">
-      {error && !modalOuvert && !modalAction && <p className="shrink-0 mb-3 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded px-3 py-2">{error}</p>}
+    <div className="flex-1 min-h-0 flex flex-col gap-4">
+      {error && !modalOuvert && !modalAction && <p className="shrink-0 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded px-3 py-2">{error}</p>}
 
       <section className="flex-1 min-h-0 flex flex-col bg-white border border-slate-200 rounded-md overflow-hidden">
         <div className="shrink-0 p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
@@ -718,304 +1015,194 @@ export default function FluxApprovisionnement({ activePersona }) {
           </div>
         </div>
 
-        <div className="shrink-0 px-4 py-3 border-b border-slate-100 flex flex-wrap items-center gap-2">
-          <label className="relative flex-1 min-w-[220px]">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-            <input
-              value={recherche}
-              onChange={(e) => setRecherche(e.target.value)}
-              placeholder="Rechercher un numéro, un demandeur, une pharmacie, un médicament…"
-              className="w-full border border-slate-200 rounded pl-8 pr-2 py-1.5 text-sm"
-            />
-          </label>
-          <div className="flex flex-wrap gap-1.5">
-            {FILTRES.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setFiltre(item.id)}
-                className={`px-2.5 py-1 rounded text-[11px] font-bold border ${filtre === item.id ? 'bg-[#0E2A4F] text-white border-[#0E2A4F]' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
-              >
-                {item.label} ({loading ? '…' : compteFiltre(item.id)})
-              </button>
-            ))}
+        <div className="shrink-0 px-4 pt-3 border-b border-slate-100">
+          <div className="flex flex-wrap gap-1 p-0.5 rounded-md bg-slate-100 border border-slate-200 w-fit">
+            {[
+              { id: 'commandes', label: 'Commandes', icon: FileText },
+              { id: 'bons', label: 'Bons de commande', icon: FileText },
+              { id: 'factures', label: 'Factures', icon: Receipt },
+            ].map((tab) => {
+              const Icone = tab.icon;
+              const actif = ongletFlux === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setOngletFlux(tab.id)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold rounded ${
+                    actif ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-800'
+                  }`}
+                >
+                  <Icone className="w-3.5 h-3.5" />
+                  {tab.label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-auto">
-          {estVueSiege && !loading && groupees.length > 0 && filtre === 'tous' && !recherche.trim() ? (
-            <div className="p-3 space-y-2">
-              <p className="text-[11px] text-slate-500 px-1">
-                Centralisation du siège : année, puis mois. À l’intérieur, l’antenne qui a transféré, puis le demandeur — ou l’antenne elle-même si c’est elle qui a commandé.
-              </p>
-              {groupees.map((anneeBloc) => {
-                const anOuverte = anneeOuverte === anneeBloc.annee;
-                return (
-                  <div key={anneeBloc.annee} className="border border-slate-200 rounded-md overflow-hidden">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAnneeOuverte(anOuverte ? null : anneeBloc.annee);
-                        setMoisOuvert(null);
-                        setAntenneOuverte(null);
-                        setOrigineOuverte(null);
-                      }}
-                      className="w-full flex items-center justify-between gap-2 px-3 py-2.5 bg-[#0E2A4F] text-white text-left"
-                    >
-                      <span className="text-sm font-black">{anneeBloc.annee}</span>
-                      <span className="text-[11px] font-semibold">{anneeBloc.nb_commandes} commande{anneeBloc.nb_commandes > 1 ? 's' : ''}</span>
-                    </button>
-                    {anOuverte && (anneeBloc.mois || []).map((moisBloc) => {
-                      const mKey = `${anneeBloc.annee}-${moisBloc.mois}`;
-                      const mOuvert = moisOuvert === mKey;
+        {ongletFlux === 'commandes' && (
+          <>
+            <div className="shrink-0 px-4 py-3 border-b border-slate-100 flex flex-wrap items-center gap-2">
+              <label className="relative flex-1 min-w-[220px]">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  value={recherche}
+                  onChange={(e) => setRecherche(e.target.value)}
+                  placeholder="Rechercher un numéro, un demandeur, une pharmacie, un médicament…"
+                  className="w-full border border-slate-200 rounded pl-8 pr-2 py-1.5 text-sm"
+                />
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {FILTRES.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setFiltre(item.id)}
+                    className={`px-2.5 py-1 rounded text-[11px] font-bold border ${filtre === item.id ? 'bg-[#0E2A4F] text-white border-[#0E2A4F]' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                  >
+                    {item.label} ({loading ? '…' : compteFiltre(item.id)})
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-auto flex flex-col">
+              <div className="flex-1 min-h-0 overflow-auto">
+                {loading && (
+                  <p className="p-6 text-xs text-slate-500 flex items-center gap-2">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Chargement des commandes…
+                  </p>
+                )}
+
+                {!loading && commandesVisibles.length === 0 && (
+                  <p className="text-xs text-slate-500 text-center py-8">
+                    {commandes.length === 0
+                      ? (estDemandeur ? 'Aucune demande enregistrée. Utilisez Nouvelle demande pour commander auprès de votre antenne.' : 'Aucune commande pour ce profil.')
+                      : 'Aucune commande ne correspond à cette recherche.'}
+                  </p>
+                )}
+
+                {!loading && hierarchiePage.length > 0 && (
+                  <div className="p-3 space-y-3">
+                    <p className="text-[11px] text-slate-500 px-1">
+                      {estVueSiege && 'Classement année → mois → antenne de réception → commande de la Direction générale, de l’antenne ou du demandeur. '}
+                      {estChefAntenne && 'Classement année → mois → demandeur de votre antenne. '}
+                      {estDemandeur && 'Classement année → mois de vos demandes. '}
+                      Seul le bandeau année se plie / déplie.
+                    </p>
+                    {hierarchiePage.map((anneeBloc) => {
+                      const ouverte = !anneesRepliees.has(anneeBloc.annee);
                       return (
-                        <div key={moisBloc.mois} className="border-t border-slate-200">
+                        <div key={anneeBloc.annee} className="border border-slate-200 rounded-md overflow-hidden bg-white">
                           <button
                             type="button"
-                            onClick={() => {
-                              setMoisOuvert(mOuvert ? null : mKey);
-                              setAntenneOuverte(null);
-                              setOrigineOuverte(null);
-                            }}
-                            className="w-full px-4 py-2 text-left text-xs font-bold text-slate-900 bg-slate-50 hover:bg-slate-100"
+                            onClick={() => basculerAnnee(anneeBloc.annee)}
+                            className="w-full flex items-center justify-between gap-2 px-3 py-2.5 bg-[#0E2A4F] text-white text-left"
                           >
-                            {moisBloc.libelle} {anneeBloc.annee} — {moisBloc.nb_commandes} commande{moisBloc.nb_commandes > 1 ? 's' : ''}
+                            <span className="inline-flex items-center gap-2">
+                              {ouverte ? <ChevronDown className="w-4 h-4 opacity-80" /> : <ChevronRight className="w-4 h-4 opacity-80" />}
+                              <span className="text-sm font-black tracking-wide">{anneeBloc.annee}</span>
+                            </span>
+                            <span className="text-[11px] font-semibold">{anneeBloc.nb_commandes} commande{anneeBloc.nb_commandes > 1 ? 's' : ''}</span>
                           </button>
-                          {mOuvert && (moisBloc.antennes || []).map((antenne) => {
-                            const aKey = `${mKey}-${antenne.antenne_id}`;
-                            const aOuverte = antenneOuverte === aKey;
-                            const transferes = (antenne.transferee_par || []).filter(Boolean);
-                            return (
-                              <div key={antenne.antenne_id} className="border-t border-slate-100">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setAntenneOuverte(aOuverte ? null : aKey);
-                                    setOrigineOuverte(null);
-                                  }}
-                                  className="w-full flex flex-wrap items-center justify-between gap-2 px-5 py-2 text-left hover:bg-blue-50/40"
-                                >
-                                  <div>
-                                    <p className="text-xs font-bold text-slate-900">{antenne.antenne_nom}{antenne.chef_lieu ? ` — ${antenne.chef_lieu}` : ''}</p>
-                                    <p className="text-[10px] text-amber-800">
-                                      Transférée par {transferes.length ? transferes.join(', ') : '—'}
-                                    </p>
-                                  </div>
-                                  <div className="flex flex-wrap gap-1.5 text-[10px] font-bold">
-                                    <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">{antenne.en_attente} en attente</span>
-                                    <span className="px-2 py-0.5 rounded bg-violet-50 text-violet-800 border border-violet-200">{antenne.reliquats} reliquat{antenne.reliquats > 1 ? 's' : ''}</span>
-                                    <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">{antenne.satisfaites} satisfaite{antenne.satisfaites > 1 ? 's' : ''}</span>
-                                  </div>
-                                </button>
-                                {aOuverte && (antenne.origines || []).map((origine) => {
-                                  const oKey = `${aKey}-${origine.cle}`;
-                                  const oOuverte = origineOuverte === oKey;
-                                  const parAntenne = origine.type === 'antenne';
-                                  return (
-                                    <div key={origine.cle} className="border-t border-slate-50">
-                                      <button
-                                        type="button"
-                                        onClick={() => setOrigineOuverte(oOuverte ? null : oKey)}
-                                        className="w-full px-7 py-1.5 text-left text-[11px] hover:bg-slate-50"
-                                      >
-                                        <span className={`font-bold ${parAntenne ? 'text-indigo-800' : 'text-slate-800'}`}>
-                                          {parAntenne ? 'Demande de l’antenne elle-même' : origine.nom}
-                                        </span>
-                                        <span className="text-slate-500"> — {origine.nb_commandes} commande{origine.nb_commandes > 1 ? 's' : ''}</span>
-                                        {!parAntenne && origine.role && <span className="block text-[10px] text-slate-500">{origine.role}{origine.partenaire_nom ? ` · ${origine.partenaire_nom}` : ''}</span>}
-                                        {parAntenne && <span className="block text-[10px] text-indigo-700">{origine.nom}</span>}
-                                      </button>
-                                      {oOuverte && (
-                                        <table className="w-full text-left text-xs">
-                                          <thead className="bg-slate-50 text-[10px] uppercase text-slate-500">
-                                            <tr>
-                                              <th className="px-3 py-1.5">N°</th>
-                                              <th className="px-3 py-1.5">Transféré par</th>
-                                              <th className="px-3 py-1.5">Quantités</th>
-                                              <th className="px-3 py-1.5">Statut</th>
-                                              <th className="px-3 py-1.5">Actions</th>
-                                            </tr>
-                                          </thead>
-                                          <tbody>
-                                            {(origine.commandes || []).map((commande) => {
-                                              const q = commande.quantites || suiviQuantites(commande);
-                                              const act = actionsCommande(commande);
+                          {ouverte && (
+                            <div className="ml-4 border-l-2 border-slate-300 pl-3 py-3 space-y-4 bg-slate-50/30">
+                              {(anneeBloc.mois || []).map((moisBloc) => (
+                                <div key={moisBloc.mois} className="space-y-2">
+                                  <p className="text-xs font-bold text-slate-800">
+                                    {moisBloc.libelle} {anneeBloc.annee}
+                                    <span className="ml-2 font-semibold text-slate-500">— {moisBloc.nb_commandes} commande{moisBloc.nb_commandes > 1 ? 's' : ''}</span>
+                                  </p>
+                                  <div className="ml-4 border-l-2 border-slate-200 pl-3 space-y-3">
+                                    {(moisBloc.antennes || []).map((antenne) => {
+                                      const transferes = (antenne.transferee_par || []).filter(Boolean);
+                                      return (
+                                        <div key={antenne.antenne_id || antenne.antenne_nom} className="space-y-2">
+                                          <div>
+                                            <p className="text-[11px] font-bold text-slate-900">
+                                              {antenne.antenne_nom}{antenne.chef_lieu ? ` — ${antenne.chef_lieu}` : ''}
+                                            </p>
+                                            {(estVueSiege || transferes.length > 0) && (
+                                              <p className="text-[10px] text-amber-800">
+                                                {transferes.length ? `Transférée par ${transferes.join(', ')} · ` : ''}
+                                                <span className="text-amber-700">{antenne.en_attente} attente</span>
+                                                {' · '}
+                                                <span className="text-violet-700">{antenne.reliquats} reliquat{antenne.reliquats > 1 ? 's' : ''}</span>
+                                                {' · '}
+                                                <span className="text-emerald-700">{antenne.satisfaites} satisfaite{antenne.satisfaites > 1 ? 's' : ''}</span>
+                                              </p>
+                                            )}
+                                          </div>
+                                          <div className="ml-4 border-l-2 border-blue-200 pl-3 space-y-3">
+                                            {(antenne.origines || []).map((origine) => {
+                                              const parAntenne = origine.type === 'antenne';
+                                              const parDg = origine.type === 'direction_generale';
                                               return (
-                                                <tr key={commande.id} className="border-t border-slate-100">
-                                                  <td className="px-3 py-2 font-bold whitespace-nowrap">{commande.numero_commande}</td>
-                                                  <td className="px-3 py-2">
-                                                    <p>{commande.transferee_au_siege_par_nom || '—'}</p>
-                                                    <p className="text-[10px] text-slate-500">{formaterDate(commande.transferee_au_siege_at)}</p>
-                                                  </td>
-                                                  <td className="px-3 py-2 whitespace-nowrap">
-                                                    <p>Dem. {q.demandee ?? q.demande}</p>
-                                                    <p className="text-emerald-800">Pris {q.prise ?? q.pris}</p>
-                                                    <p className="text-violet-800">Rel. {q.reliquat ?? q.archive}</p>
-                                                  </td>
-                                                  <td className="px-3 py-2">
-                                                    <span className={`inline-flex px-2 py-0.5 rounded border font-bold ${STATUT_STYLE[commande.statut] || ''}`}>
-                                                      {STATUTS[commande.statut] || commande.statut}
-                                                    </span>
-                                                  </td>
-                                                  <td className="px-3 py-2">
-                                                    <div className="flex flex-wrap gap-1">
-                                                      <BoutonVoir titre="Voir le détail" onClick={() => setLigneOuverte(commande.id)} />
-                                                      {act.aPrendre && (
-                                                        <button type="button" onClick={() => ouvrirAction('prise', commande)} className="px-2 py-1 font-bold rounded bg-[#2E68B4] text-white">Prendre en charge</button>
-                                                      )}
-                                                      {act.aDisperser && (
-                                                        <button type="button" onClick={() => ouvrirAction('dispersion', commande)} className="px-2 py-1 font-bold rounded bg-[#0E2A4F] text-white">Disperser</button>
-                                                      )}
-                                                    </div>
-                                                  </td>
-                                                </tr>
+                                                <div key={origine.cle} className="space-y-1.5">
+                                                  <p className={`text-[11px] font-semibold ${parDg ? 'text-[#0E2A4F]' : parAntenne ? 'text-indigo-800' : 'text-slate-800'}`}>
+                                                    {libelleOrigine(origine)}
+                                                    <span className="font-normal text-slate-500"> — {origine.nb_commandes}</span>
+                                                  </p>
+                                                  {parDg && (
+                                                    <p className="text-[10px] text-slate-500">Passée par la Direction générale à l’antenne {antenne.antenne_nom}</p>
+                                                  )}
+                                                  {parAntenne && (
+                                                    <p className="text-[10px] text-indigo-700">Passée par l’antenne {antenne.antenne_nom}{origine.nom ? ` · ${origine.nom}` : ''}</p>
+                                                  )}
+                                                  {!parAntenne && !parDg && origine.role && (
+                                                    <p className="text-[10px] text-slate-500">{origine.role}{origine.partenaire_nom ? ` · ${origine.partenaire_nom}` : ''} · passée à l’antenne {antenne.antenne_nom}</p>
+                                                  )}
+                                                  <div className="space-y-1.5">
+                                                    {(origine.commandes || []).map((commande) => (
+                                                      <CarteCommande key={commande.id} commande={commande} />
+                                                    ))}
+                                                  </div>
+                                                </div>
                                               );
                                             })}
-                                          </tbody>
-                                        </table>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            );
-                          })}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
                   </div>
-                );
-              })}
-              {commandes.some((c) => ![...STATUTS_AU_SIEGE, 'REJETEE_SIEGE'].includes(c.statut)) && (
-                <div className="border border-dashed border-slate-300 rounded-md p-3">
-                  <p className="text-[11px] font-bold text-slate-700 mb-2">Encore à l’antenne — pas encore transférées au siège</p>
-                  <ul className="space-y-1">
-                    {commandes.filter((c) => ![...STATUTS_AU_SIEGE, 'REJETEE_SIEGE'].includes(c.statut)).map((commande) => (
-                      <li key={commande.id} className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                        <span>
-                          <span className="font-bold">{commande.numero_commande}</span>
-                          {' · '}{commande.antenne?.nom || 'Antenne'}
-                          {' · '}{commande.initiee_par_antenne || commande.partenaire_type === 'ANTENNE' ? 'Demande de l’antenne' : commande.demandeur_nom}
-                        </span>
-                        <span className={`inline-flex px-2 py-0.5 rounded border font-bold ${STATUT_STYLE[commande.statut] || ''}`}>
-                          {STATUTS[commande.statut] || commande.statut}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
+                )}
+              </div>
+
+              {!loading && commandesVisibles.length > 0 && (
+                <div className="shrink-0 px-4 py-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600 bg-white">
+                  <label className="flex items-center gap-2">
+                    Afficher
+                    <select value={taillePage} onChange={(evenement) => setTaillePage(Number(evenement.target.value))} className="border border-slate-200 rounded px-2 py-1">
+                      {TAILLES_PAGE.map((taille) => <option key={taille} value={taille}>{taille}</option>)}
+                    </select>
+                    <span className="text-slate-400">sur {commandesVisibles.length}</span>
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <button type="button" disabled={pageAffichee <= 1} onClick={() => setPageCourante(pageAffichee - 1)} className="px-2 py-1 rounded border border-slate-200 disabled:opacity-40">Précédent</button>
+                    <span>Page {pageAffichee} / {nombrePages}</span>
+                    <button type="button" disabled={pageAffichee >= nombrePages} onClick={() => setPageCourante(pageAffichee + 1)} className="px-2 py-1 rounded border border-slate-200 disabled:opacity-40">Suivant</button>
+                  </div>
                 </div>
               )}
             </div>
-          ) : (
-          <table className="w-full text-left text-xs">
-            <thead className="sticky top-0 z-10 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-3 py-2 font-bold">N° commande</th>
-                <th className="px-3 py-2 font-bold">Initié par</th>
-                <th className="px-3 py-2 font-bold">Partenaire</th>
-                <th className="px-3 py-2 font-bold">Antenne</th>
-                <th className="px-3 py-2 font-bold">Médicaments</th>
-                <th className="px-3 py-2 font-bold">Quantités</th>
-                <th className="px-3 py-2 font-bold">Statut</th>
-                <th className="px-3 py-2 font-bold">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading && <LigneChargementTableau colonnes={8} libelle="Chargement des commandes…" />}
-              {!loading && commandesVisibles.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="px-3 py-8 text-center text-slate-500">
-                    {commandes.length === 0
-                      ? (estDemandeur ? 'Aucune demande enregistrée. Utilisez Nouvelle demande pour commander auprès de votre antenne.' : 'Aucune commande pour ce profil.')
-                      : 'Aucune commande ne correspond à cette recherche.'}
-                  </td>
-                </tr>
-              )}
-              {!loading && commandesPage.map((commande) => {
-                const lignes = commande.lignes || [];
-                const suivi = commande.quantites || suiviQuantites(commande);
-                const act = actionsCommande(commande);
-                return (
-                  <tr key={commande.id} className="border-t border-slate-100 hover:bg-slate-50/80">
-                    <td className="px-3 py-2.5 font-bold text-slate-900 whitespace-nowrap">{commande.numero_commande}</td>
-                    <td className="px-3 py-2.5 text-slate-700">
-                      <p>{commande.demandeur_nom}</p>
-                      {commande.demandeur_role && <p className="text-[10px] text-slate-500">{commande.demandeur_role}</p>}
-                      {commande.transferee_au_siege_par_nom && (
-                        <p className="text-[10px] text-amber-700 mt-0.5">Transférée par {commande.transferee_au_siege_par_nom}</p>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5 text-slate-700">
-                      <p>{commande.partenaire_nom}</p>
-                      {commande.partenaire_type === 'ANTENNE' && (
-                        <p className="text-[10px] text-indigo-600 font-semibold">Demande chef d&apos;antenne</p>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5 text-slate-700">
-                      {commande.antenne?.nom || commande.antenne_id}
-                      {commande.antenne?.chef_lieu ? ` — ${commande.antenne.chef_lieu}` : ''}
-                    </td>
-                    <td className="px-3 py-2.5 text-slate-700 max-w-[220px]">
-                      {lignes.map((row) => `${row.designation} (${row.quantite_demandee})`).join(', ') || '—'}
-                    </td>
-                    <td className="px-3 py-2.5 whitespace-nowrap text-slate-700">
-                      <p>Dem. <span className="font-semibold">{suivi.demandee ?? suivi.demande}</span></p>
-                      <p>Pris <span className="font-semibold text-emerald-800">{suivi.prise ?? suivi.pris}</span></p>
-                      <p>Rel. <span className="font-semibold text-violet-800">{suivi.reliquat ?? suivi.archive}</span></p>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <span className={`inline-flex px-2 py-0.5 rounded border font-bold ${STATUT_STYLE[commande.statut] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
-                        {STATUTS[commande.statut] || commande.statut}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <div className="flex flex-wrap gap-1.5">
-                        <BoutonVoir titre="Voir le détail" onClick={() => setLigneOuverte(commande.id)} />
-                        {peutSupprimer && (
-                          <BoutonSupprimer titre="Supprimer la commande" onClick={() => supprimerCommande(commande)} />
-                        )}
-                        {act.aTransferer && (
-                          <button
-                            type="button"
-                            disabled={transfertEnCours === commande.id}
-                            onClick={() => transfererAuSiege(commande)}
-                            className="px-2 py-1 font-bold rounded bg-amber-600 text-white disabled:opacity-60"
-                          >
-                            {transfertEnCours === commande.id ? 'Transfert…' : 'Transférer au siège'}
-                          </button>
-                        )}
-                        {act.aPrendre && (
-                          <button type="button" onClick={() => ouvrirAction('prise', commande)} className="px-2 py-1 font-bold rounded bg-[#2E68B4] text-white">Prendre en charge</button>
-                        )}
-                        {act.aDisperser && (
-                          <button type="button" onClick={() => ouvrirAction('dispersion', commande)} className="px-2 py-1 font-bold rounded bg-[#0E2A4F] text-white">Disperser</button>
-                        )}
-                        {act.aRejeter && (
-                          <button type="button" onClick={() => rejeter(commande)} className="px-2 py-1 font-bold rounded border border-rose-300 text-rose-700">Rejeter</button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          )}
-        </div>
+          </>
+        )}
 
-        <div className="shrink-0 px-4 py-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
-          <label className="flex items-center gap-2">
-            Afficher
-            <select value={taillePage} onChange={(evenement) => setTaillePage(Number(evenement.target.value))} className="border border-slate-200 rounded px-2 py-1">
-              {TAILLES_PAGE.map((taille) => <option key={taille} value={taille}>{taille}</option>)}
-            </select>
-          </label>
-          <div className="flex items-center gap-2">
-            <button type="button" disabled={pageAffichee <= 1} onClick={() => setPageCourante(pageAffichee - 1)} className="px-2 py-1 rounded border border-slate-200 disabled:opacity-40">Précédent</button>
-            <span>Page {pageAffichee} / {nombrePages}</span>
-            <button type="button" disabled={pageAffichee >= nombrePages} onClick={() => setPageCourante(pageAffichee + 1)} className="px-2 py-1 rounded border border-slate-200 disabled:opacity-40">Suivant</button>
-          </div>
-        </div>
+        {ongletFlux === 'bons' && (
+          <FluxDocumentsPanel key={`bons-${docsRefreshKey}`} stage={stage} typeForce="BON_COMMANDE" embed />
+        )}
+        {ongletFlux === 'factures' && (
+          <FluxDocumentsPanel key={`fac-${docsRefreshKey}`} stage={stage} typeForce="FACTURE" embed />
+        )}
       </section>
 
       {commandeDetail && (
@@ -1025,9 +1212,7 @@ export default function FluxApprovisionnement({ activePersona }) {
               <div>
                 <h2 className="text-sm font-bold text-slate-900">Détail — {commandeDetail.numero_commande}</h2>
                 <p className="mt-1 flex flex-wrap items-center gap-2">
-                  <span className={`inline-flex px-2 py-0.5 rounded border text-[11px] font-bold ${STATUT_STYLE[commandeDetail.statut] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
-                    {STATUTS[commandeDetail.statut] || commandeDetail.statut}
-                  </span>
+                  <PastillesStatut commande={commandeDetail} stage={stage} compact />
                   <span className="text-[11px] text-slate-600">
                     {suiviQuantites(commandeDetail).pris} pris en charge · {suiviQuantites(commandeDetail).archive} archivé{suiviQuantites(commandeDetail).archive > 1 ? 's' : ''}, en attente du prochain arrivage
                   </span>
@@ -1039,17 +1224,24 @@ export default function FluxApprovisionnement({ activePersona }) {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               <ChampDetail libelle="N° demande" valeur={commandeDetail.numero_commande} />
-              <ChampDetail libelle="Initiée par" valeur={commandeDetail.demandeur_nom} />
+              <ChampDetail
+                libelle="Origine"
+                valeur={deLaDirectionGenerale(commandeDetail)
+                  ? 'Commande de la Direction générale'
+                  : genereeParAntenne(commandeDetail)
+                    ? 'Commande générée par l’antenne'
+                    : `Commande de ${commandeDetail.demandeur_nom || 'demandeur'}`}
+              />
+              <ChampDetail libelle="Passée par" valeur={commandeDetail.demandeur_nom} />
               <ChampDetail libelle="Fonction" valeur={commandeDetail.demandeur_role} />
               <ChampDetail libelle="Partenaire / structure" valeur={commandeDetail.partenaire_nom} />
-              <ChampDetail libelle="Type" valeur={commandeDetail.partenaire_type} />
-              <ChampDetail libelle="Antenne" valeur={[commandeDetail.antenne?.nom, commandeDetail.antenne?.chef_lieu].filter(Boolean).join(' — ')} />
+              <ChampDetail libelle="Antenne de réception" valeur={[commandeDetail.antenne?.nom, commandeDetail.antenne?.chef_lieu].filter(Boolean).join(' — ')} />
               <ChampDetail libelle="Montant" valeur={formaterMontant(commandeDetail.montant_total_xaf)} />
               <ChampDetail libelle="Enregistrée le" valeur={formaterDate(commandeDetail.created_at)} />
               <ChampDetail
-                libelle="Transférée au siège"
+                libelle="Transférée à la Direction générale"
                 valeur={commandeDetail.transferee_au_siege_at
-                  ? `${formaterDate(commandeDetail.transferee_au_siege_at)}${commandeDetail.transferee_au_siege_par_nom ? ` par ${commandeDetail.transferee_au_siege_par_nom}` : ''}`
+                  ? `${formaterDate(commandeDetail.transferee_au_siege_at)}${commandeDetail.transferee_au_siege_par_nom ? ` par ${commandeDetail.transferee_au_siege_par_nom}` : ''}${commandeDetail.antenne?.nom ? ` (${commandeDetail.antenne.nom})` : ''}`
                   : ''}
               />
               <ChampDetail
@@ -1101,6 +1293,41 @@ export default function FluxApprovisionnement({ activePersona }) {
                 </table>
               </div>
             </div>
+            {((commandeDetail.pieces || commandeDetail.bons_commande || commandeDetail.factures || []).length > 0) && (
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-1">Bons de commande &amp; factures</p>
+                <div className="flex flex-wrap gap-2">
+                  {(commandeDetail.pieces || [
+                    ...(commandeDetail.bons_commande || []),
+                    ...(commandeDetail.factures || []),
+                  ]).map((piece) => (
+                    <button
+                      key={piece.id}
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          if (piece.lignes?.length) {
+                            setPiecePdf(piece);
+                            return;
+                          }
+                          const res = await apiRequest(`/flux/documents/${piece.id}`);
+                          setPiecePdf(res.piece || piece);
+                        } catch {
+                          setPiecePdf(piece);
+                        }
+                      }}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded border border-slate-200 hover:bg-slate-50 text-slate-800"
+                    >
+                      {piece.type === 'FACTURE'
+                        ? <Receipt className="w-3.5 h-3.5 text-slate-500" />
+                        : <FileText className="w-3.5 h-3.5 text-slate-500" />}
+                      <span className="font-mono">{piece.numero}</span>
+                      <span className="text-slate-500">· pris {piece.quantite_prise_totale} · reliquat {piece.quantite_reliquat_totale}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {commandeDetail.journal?.length > 0 && (
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-1">Journal</p>
@@ -1125,23 +1352,56 @@ export default function FluxApprovisionnement({ activePersona }) {
 
       {aideOuverte && (
         <div className="fixed inset-0 z-[80] bg-slate-900/50 flex items-center justify-center p-4" onMouseDown={() => setAideOuverte(false)}>
-          <div onMouseDown={(evenement) => evenement.stopPropagation()} className="w-full max-w-lg bg-white border border-slate-200 rounded-md p-4 shadow-xl space-y-3">
+          <div onMouseDown={(evenement) => evenement.stopPropagation()} className="w-full max-w-xl bg-white border border-slate-200 rounded-md p-4 shadow-xl space-y-4 max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="text-sm font-bold text-slate-900">Comment fonctionne la chaîne</h2>
+              <h2 className="text-sm font-bold text-slate-900">Explications — chaîne &amp; statuts</h2>
               <button type="button" onClick={() => setAideOuverte(false)} className="p-1 rounded text-slate-500 hover:bg-slate-100" aria-label="Fermer">
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <p className="text-sm text-slate-600">L'OPN achète les médicaments. Chaque antenne reçoit les commandes de ses pharmacies, les transmet au siège, et le siège disperse.</p>
+            <p className="text-sm text-slate-600">
+              L&apos;OPN achète les médicaments. Chaque antenne reçoit les commandes de ses pharmacies, les transfère au siège, puis le siège prend en charge et disperse.
+            </p>
             <p className="text-xs text-slate-500">Droits sur cette page : {libelleDroits(activePersona, 'flux')}.</p>
-            <ul className="space-y-2">
-              {STEPS.map((etape) => (
-                <li key={etape.id} className="text-xs text-slate-700">
-                  <span className="font-bold text-slate-900">{etape.titre}. </span>
-                  {etape.texte}
-                </li>
-              ))}
-            </ul>
+
+            <div>
+              <h3 className="text-[11px] font-bold uppercase tracking-wide text-slate-500 mb-2">Déroulement</h3>
+              <ul className="space-y-2">
+                {STEPS.map((etape) => (
+                  <li key={etape.id} className="text-xs text-slate-700">
+                    <span className="font-bold text-slate-900">{etape.titre}. </span>
+                    {etape.texte}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div>
+              <h3 className="text-[11px] font-bold uppercase tracking-wide text-slate-500 mb-2">
+                Filtres de statut {estVueSiege ? '(siège)' : '(antenne / demandeur)'}
+              </h3>
+              <ul className="space-y-2.5">
+                {(estVueSiege ? EXPLICATIONS_FILTRES_SIEGE : EXPLICATIONS_FILTRES_ANTENNE).map((item) => (
+                  <li key={item.id} className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
+                    <p className="text-xs font-bold text-slate-900">{item.titre}</p>
+                    <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">{item.texte}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {estVueSiege && (
+              <div>
+                <h3 className="text-[11px] font-bold uppercase tracking-wide text-slate-500 mb-2">Pastilles sur une commande</h3>
+                <ul className="space-y-1.5 text-[11px] text-slate-600">
+                  <li><span className="font-semibold text-slate-800">Commande générée / envoyée à l&apos;antenne</span> — origine de la demande.</li>
+                  <li><span className="font-semibold text-slate-800">Commande transférée par l&apos;antenne</span> — arrivée au siège, en attente de prise en charge.</li>
+                  <li><span className="font-semibold text-slate-800">Prise en charge au siège</span> — quantités engagées (totale ou partielle).</li>
+                  <li><span className="font-semibold text-slate-800">Reliquat / partiellement archivée</span> — solde à traiter plus tard.</li>
+                  <li><span className="font-semibold text-slate-800">Dispersée</span> — quantités envoyées ; commande satisfaite si tout est dispersé.</li>
+                </ul>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1230,12 +1490,17 @@ export default function FluxApprovisionnement({ activePersona }) {
           <form onSubmit={envoyerCommande} onMouseDown={(e) => e.stopPropagation()} className="w-full max-w-2xl bg-white border border-slate-200 rounded-md p-4 space-y-3 max-h-[90vh] overflow-y-auto shadow-xl">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-sm font-bold text-slate-900">
-                {estChefAntenne ? 'Nouvelle demande (chef d\'antenne)' : (estDemandeur ? 'Nouvelle demande' : 'Nouvelle commande')}
+                {estDirectionGenerale ? 'Nouvelle commande — Direction générale' : (estChefAntenne ? 'Nouvelle demande (chef d\'antenne)' : (estDemandeur ? 'Nouvelle demande' : 'Nouvelle commande'))}
               </h2>
               <button type="button" onClick={() => setModalOuvert(false)} className="p-1 rounded text-slate-500 hover:bg-slate-100" aria-label="Fermer">
                 <X className="w-4 h-4" />
               </button>
             </div>
+            {estDirectionGenerale && (
+              <p className="text-[11px] text-[#0E2A4F] bg-slate-50 border border-slate-200 rounded px-3 py-2">
+                Cette commande est celle de la Direction générale. Choisissez l’antenne de réception : elle la verra, puis la transférera au siège.
+              </p>
+            )}
             {estChefAntenne && (
               <p className="text-[11px] text-indigo-800 bg-indigo-50 border border-indigo-100 rounded px-3 py-2">
                 Cette demande sera enregistrée à votre nom. Vous continuez à voir toutes les demandes des pharmacies de votre antenne.
@@ -1248,18 +1513,18 @@ export default function FluxApprovisionnement({ activePersona }) {
                 <input value={activePersona?.nom || activePersona?.name || ''} readOnly className="mt-1 w-full border border-slate-200 rounded px-2 py-1.5 text-sm bg-slate-50" />
               </label>
               <label className="text-xs text-slate-600">
-                {estChefAntenne ? 'Demande au nom de' : (estDemandeur ? 'Structure' : 'Pharmacie ou partenaire')}
+                {estDirectionGenerale ? 'Origine' : (estChefAntenne ? 'Demande au nom de' : (estDemandeur ? 'Structure' : 'Pharmacie ou partenaire'))}
                 <input
-                  value={estChefAntenne ? nomChef : partenaire}
+                  value={estDirectionGenerale ? 'Direction générale' : (estChefAntenne ? nomChef : partenaire)}
                   onChange={(e) => setPartenaire(e.target.value)}
-                  readOnly={estDemandeur || estChefAntenne || antenneVerrouillee}
-                  className={`mt-1 w-full border border-slate-200 rounded px-2 py-1.5 text-sm ${(estDemandeur || estChefAntenne || antenneVerrouillee) ? 'bg-slate-50' : ''}`}
+                  readOnly={estDirectionGenerale || estDemandeur || estChefAntenne || antenneVerrouillee}
+                  className={`mt-1 w-full border border-slate-200 rounded px-2 py-1.5 text-sm ${(estDirectionGenerale || estDemandeur || estChefAntenne || antenneVerrouillee) ? 'bg-slate-50' : ''}`}
                   required
                   placeholder="Nom de la pharmacie"
                 />
               </label>
               <label className="text-xs text-slate-600 md:col-span-2">
-                Antenne
+                {estDirectionGenerale ? 'Antenne de réception' : 'Antenne'}
                 {antenneVerrouillee ? (
                   <input value={libelleAntenneDefaut || (antenneChoisie ? `${antenneChoisie.nom} — ${antenneChoisie.chef_lieu}` : '')} readOnly className="mt-1 w-full border border-slate-200 rounded px-2 py-1.5 text-sm bg-slate-50" />
                 ) : (
@@ -1377,6 +1642,12 @@ export default function FluxApprovisionnement({ activePersona }) {
           </form>
         </div>
       )}
+
+      <FluxPiecePdfModal
+        isOpen={!!piecePdf}
+        piece={piecePdf}
+        onClose={() => setPiecePdf(null)}
+      />
     </div>
   );
 }

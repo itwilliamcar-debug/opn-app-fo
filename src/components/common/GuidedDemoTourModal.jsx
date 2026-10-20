@@ -276,12 +276,17 @@ export default function GuidedDemoTourModal({
     const stepDuration = activeTourState.stepDuration || 7000;
     const secondsRemaining = Math.max(1, Math.ceil((1 - progress / 100) * (stepDuration / 1000)));
 
+    const nextStepPreview = !isLastStep
+      ? runningScenario.steps[activeTourState.currentStepIndex + 1]
+      : null;
+    const nextDomainRevealed = Boolean(activeTourState.nextDomainRevealed);
+
     return (
-      <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 w-full max-w-3xl px-3 sm:px-4 animate-in slide-in-from-bottom-5 duration-300 pointer-events-auto">
-        <div className="bg-slate-950/95 backdrop-blur-md text-white rounded-2xl shadow-2xl border border-emerald-500/50 p-4 sm:p-5 ring-4 ring-black/40 relative overflow-hidden">
+      <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 w-full max-w-3xl px-3 sm:px-4 animate-in slide-in-from-bottom-5 duration-300 pointer-events-none">
+        <div className="bg-slate-950/72 backdrop-blur-[2px] text-white rounded-2xl shadow-xl border border-emerald-500/35 p-4 sm:p-5 ring-2 ring-black/20 relative overflow-hidden pointer-events-auto">
           
           {/* Ligne de progression automatique animée */}
-          <div className="absolute top-0 left-0 right-0 h-1.5 bg-slate-800">
+          <div className="absolute top-0 left-0 right-0 h-1.5 bg-slate-800/80">
             <div 
               className="h-full bg-gradient-to-r from-[#00A651] via-[#FFDE16] to-[#38bdf8] transition-all duration-100 ease-linear"
               style={{ width: `${progress}%` }}
@@ -289,7 +294,7 @@ export default function GuidedDemoTourModal({
           </div>
 
           {/* En-tête HUD */}
-          <div className="flex items-center justify-between border-b border-slate-800/90 pb-3 mb-3 pt-1">
+          <div className="flex items-center justify-between border-b border-slate-800/60 pb-3 mb-3 pt-1">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-8 h-8 rounded-lg bg-[#00A651] text-white flex items-center justify-center font-bold text-xs shadow-md shrink-0">
                 {isAutoPlaying ? (
@@ -304,17 +309,22 @@ export default function GuidedDemoTourModal({
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
                     {isAutoPlaying ? 'Autopilot 100% Automatique' : 'En Pause'}
                   </span>
-                  <span className="px-2 py-0.5 rounded-full bg-slate-800 text-[10px] font-mono text-slate-300 border border-slate-700">
+                  <span className="px-2 py-0.5 rounded-full bg-slate-800/80 text-[10px] font-mono text-slate-300 border border-slate-700">
                     Étape {activeTourState.currentStepIndex + 1} / {runningScenario.steps.length}
                   </span>
                   {isAutoPlaying && (
                     <span className="text-[10px] text-amber-400 font-mono font-bold hidden sm:inline">
-                      (Étape suivante dans {secondsRemaining}s)
+                      ({Math.round(progress)}% · suite dans {secondsRemaining}s)
+                    </span>
+                  )}
+                  {nextDomainRevealed && nextStepPreview && (
+                    <span className="px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-400/40 text-[9.5px] font-bold uppercase tracking-wider">
+                      Domaine suivant affiché
                     </span>
                   )}
                 </div>
                 <h3 className="text-xs sm:text-sm font-bold text-white truncate mt-0.5">
-                  {currentStep.title}
+                  {nextDomainRevealed && nextStepPreview ? nextStepPreview.title : currentStep.title}
                 </h3>
               </div>
             </div>
