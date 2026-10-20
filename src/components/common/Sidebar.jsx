@@ -181,8 +181,8 @@ export default function Sidebar({
               <button
                 key={`${item.id}-${item.label}`}
                 onClick={() => setCurrentView(item.id)}
-                title={item.enCours ? `${item.label} — En cours de développement` : item.label}
-                className={`w-full flex items-center ${collapsed ? 'justify-center px-2' : 'justify-between px-3'} py-2 rounded-md text-xs font-semibold transition-all ${
+                title={item.label}
+                className={`w-full flex items-center ${collapsed ? 'justify-center px-2' : 'px-3'} py-2 rounded-md text-xs font-semibold transition-all ${
                   isActive
                     ? 'bg-[#2E68B4] text-white shadow-sm font-bold'
                     : 'text-blue-100 hover:bg-white/10 hover:text-white'
@@ -190,22 +190,8 @@ export default function Sidebar({
               >
                 <div className={`flex items-center min-w-0 ${collapsed ? '' : 'gap-2.5'}`}>
                   <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-blue-200'}`} />
-                  {!collapsed && (
-                    <span className="min-w-0 text-left">
-                      <span className="block truncate">{item.label}</span>
-                      {item.enCours && (
-                        <span className={`block text-[9px] font-bold leading-tight mt-0.5 ${isActive ? 'text-amber-100' : 'text-amber-200'}`}>
-                          En cours de développement
-                        </span>
-                      )}
-                    </span>
-                  )}
+                  {!collapsed && <span className="min-w-0 text-left truncate">{item.label}</span>}
                 </div>
-                {!collapsed && item.badge && !item.enCours && (
-                  <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold border shrink-0 ml-1 ${isActive ? 'bg-white/20 text-white border-white/30' : item.badgeColor}`}>
-                    {item.badge}
-                  </span>
-                )}
               </button>
             );
           })}

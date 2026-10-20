@@ -65,7 +65,7 @@ const STEPS = [
   { id: 'antenne', titre: '2. Antenne', texte: 'L\'antenne voit « Commande reçue du demandeur », ou « Commande générée par l\'antenne » si c\'est elle qui a commandé. Elle transfère ensuite au siège.' },
   { id: 'siege', titre: '3. Siège (Direction générale)', texte: 'Le siège voit d\'abord « Commande envoyée à l\'antenne » (ou « Commande générée par l\'antenne »), puis « Commande transférée par l\'antenne ».' },
   { id: 'prise', titre: '4. Prise en charge', texte: 'Le siège engage les quantités disponibles. Le reliquat reste ouvert pour un prochain arrivage.' },
-  { id: 'dispersion', titre: '5. Dispersion', texte: 'Le siège envoie (dispense) les quantités prises en charge vers l\'antenne / le demandeur.' },
+  { id: 'dispersion', titre: '5. Dispersion', texte: 'Le siège envoie les quantités prises en charge. Le demandeur et le chef d\'antenne voient alors le bon de commande et la facture, avec le statut « Commande dispersée ».' },
 ];
 
 /** Explications des filtres / statuts visibles sur la page siège. */
@@ -86,8 +86,6 @@ const EXPLICATIONS_FILTRES_ANTENNE = [
   { id: 'DISPERSEE', titre: 'Satisfaites', texte: 'Commandes entièrement dispersées par le siège : les quantités ont été livrées / envoyées.' },
   { id: 'REJETEE', titre: 'Rejetées', texte: 'Commandes refusées (par l\'antenne ou par le siège).' },
 ];
-
-const STATUTS_SUITE = ['PARTIELLEMENT_TRANSMISE', 'PARTIELLEMENT_ARCHIVEE', 'TRANSMISE_SIEGE', 'PARTIELLEMENT_DISPERSEE', 'DISPERSEE', 'REJETEE_SIEGE', 'REJETEE_ANTENNE'];
 
 /** La commande a été créée par le chef d'antenne, pas par un demandeur. */
 function genereeParAntenne(commande) {
@@ -115,11 +113,31 @@ function libelleOrigine(origine) {
   return origine.nom;
 }
 
+const STATUTS_PRISE = ['TRANSMISE_SIEGE', 'PARTIELLEMENT_TRANSMISE', 'PARTIELLEMENT_ARCHIVEE', 'PARTIELLEMENT_DISPERSEE', 'DISPERSEE'];
+const STATUTS_DISPERSION = ['PARTIELLEMENT_DISPERSEE', 'DISPERSEE'];
+
+function quantitesCommande(commande) {
+  const q = commande?.quantites || {};
+  return {
+    prise: Number(q.prise ?? q.pris ?? 0),
+    dispersee: Number(q.dispersee ?? 0),
+    reliquat: Number(q.reliquat ?? q.archive ?? 0),
+  };
+}
+
+function commandeDispersee(commande) {
+  const { dispersee } = quantitesCommande(commande);
+  return dispersee > 0 || STATUTS_DISPERSION.includes(commande?.statut);
+}
+
+function piecesCommande(commande) {
+  if (Array.isArray(commande?.pieces) && commande.pieces.length) return commande.pieces;
+  return [...(commande?.bons_commande || []), ...(commande?.factures || [])];
+}
+
 /**
- * Libellés de statut selon l'interface.
- * Demandeur : envoyée à l'antenne.
- * Antenne : reçue du demandeur, ou générée par l'antenne.
- * Siège : d'abord l'envoi (ou la génération), puis le transfert vers le siège.
+ * Le statut suit le cheminement, pour le demandeur, l'antenne et le siège.
+ * Chaque étape atteinte reste affichée.
  */
 function parcoursStatut(commande, stage) {
   const parAntenne = genereeParAntenne(commande);
@@ -128,6 +146,11 @@ function parcoursStatut(commande, stage) {
     || commande?.statut === 'REJETEE_SIEGE'
     || Boolean(commande?.transferee_au_siege_at);
   const antenneNom = nomAntenneCommande(commande);
+  const { prise, reliquat } = quantitesCommande(commande);
+  const priseFaite = prise > 0
+    || Boolean(commande?.prise_en_charge_siege_at)
+    || STATUTS_PRISE.includes(commande?.statut);
+  const dispersee = commandeDispersee(commande);
 
   const styleDg = 'bg-[#0E2A4F]/10 text-[#0E2A4F] border-[#0E2A4F]/30';
   const envoyee = { id: 'envoi', label: 'Commande envoyée à l\'antenne', style: STATUT_STYLE.SOUMISE_ANTENNE };
@@ -140,6 +163,16 @@ function parcoursStatut(commande, stage) {
     label: antenneNom ? `Commande transférée par l'antenne ${antenneNom}` : 'Commande transférée par l\'antenne',
     style: STATUT_STYLE.TRANSFEREE_SIEGE,
   };
+  const priseEtape = {
+    id: 'prise',
+    label: reliquat > 0 ? 'Prise en charge partielle au siège' : 'Prise en charge au siège',
+    style: reliquat > 0 ? STATUT_STYLE.PARTIELLEMENT_ARCHIVEE : STATUT_STYLE.TRANSMISE_SIEGE,
+  };
+  const dispersionEtape = {
+    id: 'dispersion',
+    label: commande?.statut === 'DISPERSEE' && reliquat <= 0 ? 'Commande dispersée' : 'Dispersion partielle',
+    style: commande?.statut === 'DISPERSEE' && reliquat <= 0 ? STATUT_STYLE.DISPERSEE : STATUT_STYLE.PARTIELLEMENT_DISPERSEE,
+  };
 
   let etapes;
   if (stage === 'commande') {
@@ -151,12 +184,14 @@ function parcoursStatut(commande, stage) {
   }
 
   if (transferee) etapes.push({ ...transfert });
+  if (priseFaite) etapes.push(priseEtape);
+  if (dispersee) etapes.push(dispersionEtape);
 
-  if (STATUTS_SUITE.includes(commande?.statut)) {
+  if (commande?.statut === 'REJETEE_ANTENNE' || commande?.statut === 'REJETEE_SIEGE') {
     etapes.push({
       id: commande.statut,
       label: STATUTS[commande.statut] || commande.statut,
-      style: STATUT_STYLE[commande.statut] || 'bg-slate-100 text-slate-700 border-slate-200',
+      style: STATUT_STYLE[commande.statut],
     });
   }
 
@@ -200,8 +235,9 @@ function suiviQuantites(commande) {
     totaux.demande += Number(row.quantite_demandee || 0);
     totaux.pris += Number(row.quantite_prise_en_charge || 0);
     totaux.archive += reliquatLigne(row);
+    totaux.dispersee += Number(row.quantite_dispersee || 0);
     return totaux;
-  }, { demande: 0, pris: 0, archive: 0 });
+  }, { demande: 0, pris: 0, archive: 0, dispersee: 0 });
 }
 
 /** Tailles de page pour la liste en cartes (tous profils). */
@@ -757,14 +793,22 @@ export default function FluxApprovisionnement({ activePersona }) {
         );
         setDocsRefreshKey((k) => k + 1);
       } else {
-        await apiRequest(`/flux/commandes/${commande.id}/disperser`, {
+        const res = await apiRequest(`/flux/commandes/${commande.id}/disperser`, {
           method: 'POST',
           body: JSON.stringify({
             lignes: lignes.map((l) => ({ id: l.id, quantite: l.quantite })),
             note_dispersion: noteAction || undefined,
           }),
         });
-        pushToast(`Dispersion enregistrée pour ${commande.numero_commande}.`);
+        const docs = piecesCommande(res?.commande);
+        const bc = docs.find((piece) => piece.type === 'BON_COMMANDE')?.numero;
+        const fac = docs.find((piece) => piece.type === 'FACTURE')?.numero;
+        pushToast(
+          bc && fac
+            ? `Dispersion enregistrée. Bon ${bc} et facture ${fac} visibles par le demandeur et le chef d'antenne.`
+            : `Dispersion enregistrée pour ${commande.numero_commande}.`
+        );
+        setDocsRefreshKey((k) => k + 1);
       }
       setModalAction(null);
       await load();
@@ -927,7 +971,34 @@ export default function FluxApprovisionnement({ activePersona }) {
             Dem. <span className="font-semibold">{suivi.demandee ?? suivi.demande}</span>
             {' · '}Pris <span className="font-semibold text-emerald-800">{suivi.prise ?? suivi.pris}</span>
             {' · '}Rel. <span className="font-semibold text-violet-800">{suivi.reliquat ?? suivi.archive}</span>
+            {' · '}Disp. <span className="font-semibold text-emerald-900">{suivi.dispersee ?? 0}</span>
           </p>
+          {commandeDispersee(commande) && piecesCommande(commande).length > 0 && (
+            <div className="flex flex-wrap gap-1 pt-1">
+              {piecesCommande(commande).map((piece) => (
+                <button
+                  key={piece.id}
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      if (piece.lignes?.length) {
+                        setPiecePdf(piece);
+                        return;
+                      }
+                      const res = await apiRequest(`/flux/documents/${piece.id}`);
+                      setPiecePdf(res.piece || piece);
+                    } catch {
+                      setPiecePdf(piece);
+                    }
+                  }}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded border border-emerald-200 bg-emerald-50 text-emerald-900"
+                >
+                  {piece.type === 'FACTURE' ? <Receipt className="w-3 h-3" /> : <FileText className="w-3 h-3" />}
+                  {piece.type === 'FACTURE' ? 'Facture' : 'Bon de commande'} {piece.numero}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="flex flex-col items-end gap-1.5 shrink-0">
           <PastillesStatut commande={commande} stage={stage} compact />
