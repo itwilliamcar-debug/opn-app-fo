@@ -654,6 +654,9 @@ export default function FluxApprovisionnement({ activePersona }) {
       setMotif('');
       setPartenaire('');
       setModalOuvert(false);
+      if (estChefAntenne) {
+        pushToast('Bon enregistré et transféré à la Direction générale.');
+      }
       await load();
     } catch (err) {
       setError(err?.backendUnavailable ? '' : err.message);
@@ -1503,7 +1506,7 @@ export default function FluxApprovisionnement({ activePersona }) {
             )}
             {estChefAntenne && (
               <p className="text-[11px] text-indigo-800 bg-indigo-50 border border-indigo-100 rounded px-3 py-2">
-                Cette demande sera enregistrée à votre nom. Vous continuez à voir toutes les demandes des pharmacies de votre antenne.
+                Ce bon est enregistré à votre nom et transféré tout de suite à la Direction générale. Les demandes des pharmacies de votre antenne restent à transférer par vous.
               </p>
             )}
             {error && <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded px-3 py-2">{error}</p>}
