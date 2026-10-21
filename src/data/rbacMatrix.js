@@ -682,8 +682,9 @@ function avecEtiquette(item) {
 }
 
 export function getRoleModules(codeRole) {
-  // Chef d'antenne : pas de module Référentiel.
-  const workflow = codeRole === 'CHEF_ANTENNE_PROVINCIALE'
+  // Demandeurs et chef d'antenne : pas de module Référentiel.
+  const sansReferentiel = codeRole === 'CHEF_ANTENNE_PROVINCIALE' || ROLES_COMMANDE.includes(codeRole);
+  const workflow = sansReferentiel
     ? [MODULE_FLUX]
     : [MODULE_FLUX, MODULE_REFERENTIEL];
   if (ROLES_PATRIMOINE.includes(codeRole)) {
@@ -781,6 +782,7 @@ export function getVisibleModules(user) {
   const ajouts = MODULES_DROITS
     .filter((item) => codes.has(item.access) && !deja.has(item.id))
     .filter((item) => item.id !== 'patrimoine' || ROLES_PATRIMOINE.includes(codeRole))
+    .filter((item) => item.id !== 'referentiel' || !ROLES_COMMANDE.includes(codeRole))
     .map(avecEtiquette);
   return [...baseFiltree, ...ajouts];
 }

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, ChevronRight, FileText, Info, Loader2, Plus, Receipt, RefreshCw, Search, X } from 'lucide-react';
-import { BoutonSupprimer, BoutonVoir } from '../common/BoutonsActionsTableau';
+import { BoutonModifier, BoutonSupprimer, BoutonVoir } from '../common/BoutonsActionsTableau';
 import { apiRequest } from '../../services/api';
 import { askConfirm, pushToast } from '../../services/toastBus';
 import { droit, getCodeRole, getFluxStage, libelleDroits } from '../../data/rbacMatrix';
@@ -23,6 +23,7 @@ const STATUTS = {
 
 const ACTIONS = {
   CREATION: 'Commande enregistrée',
+  MODIFICATION: 'Demande modifiée',
   TRANSFERT: 'Transfert antenne → siège',
   PRISE_EN_CHARGE: 'Prise en charge siège',
   TRANSMISSION: 'Prise en charge / transmission',
@@ -62,7 +63,7 @@ const STATUT_STYLE = {
 
 const STEPS = [
   { id: 'commande', titre: '1. Commande', texte: 'Le demandeur initie la commande. Son statut est « Commande envoyée à l\'antenne ».' },
-  { id: 'antenne', titre: '2. Antenne', texte: 'L\'antenne voit « Commande reçue du demandeur », ou « Commande générée par l\'antenne » si c\'est elle qui a commandé. Elle transfère ensuite au siège.' },
+  { id: 'antenne', titre: '2. Antenne', texte: 'Le chef d\'antenne voit toutes les demandes de sa circonscription. Au transfert, le statut reçu est marqué « quitté » et le statut devient « Commande transférée par l\'antenne ». Le demandeur voit la même évolution sur ses propres commandes.' },
   { id: 'siege', titre: '3. Siège (Direction générale)', texte: 'Le siège voit d\'abord « Commande envoyée à l\'antenne » (ou « Commande générée par l\'antenne »), puis « Commande transférée par l\'antenne ».' },
   { id: 'prise', titre: '4. Prise en charge', texte: 'Le siège engage les quantités disponibles. Le reliquat reste ouvert pour un prochain arrivage.' },
   { id: 'dispersion', titre: '5. Dispersion', texte: 'Le siège envoie les quantités prises en charge. Le demandeur et le chef d\'antenne voient alors le bon de commande et la facture, avec le statut « Commande dispersée ».' },
@@ -153,25 +154,29 @@ function parcoursStatut(commande, stage) {
   const dispersee = commandeDispersee(commande);
 
   const styleDg = 'bg-[#0E2A4F]/10 text-[#0E2A4F] border-[#0E2A4F]/30';
-  const envoyee = { id: 'envoi', label: 'Commande envoyée à l\'antenne', style: STATUT_STYLE.SOUMISE_ANTENNE };
-  const recue = { id: 'recue', label: 'Commande reçue du demandeur', style: STATUT_STYLE.SOUMISE_ANTENNE };
-  const generee = { id: 'generee', label: 'Commande générée par l\'antenne', style: STATUT_STYLE.EFFECTUEE_CHEF_ANTENNE };
-  const dg = { id: 'dg', label: 'Commande de la Direction générale', style: styleDg };
-  const recueDg = { id: 'recue-dg', label: 'Commande reçue de la Direction générale', style: styleDg };
+  const creeeLe = commande?.created_at;
+  const envoyee = { id: 'envoi', label: 'Commande envoyée à l\'antenne', style: STATUT_STYLE.SOUMISE_ANTENNE, quand: creeeLe };
+  const recue = { id: 'recue', label: 'Commande reçue du demandeur', style: STATUT_STYLE.SOUMISE_ANTENNE, quand: creeeLe };
+  const generee = { id: 'generee', label: 'Commande générée par l\'antenne', style: STATUT_STYLE.EFFECTUEE_CHEF_ANTENNE, quand: creeeLe };
+  const dg = { id: 'dg', label: 'Commande de la Direction générale', style: styleDg, quand: creeeLe };
+  const recueDg = { id: 'recue-dg', label: 'Commande reçue de la Direction générale', style: styleDg, quand: creeeLe };
   const transfert = {
     id: 'transfert',
     label: antenneNom ? `Commande transférée par l'antenne ${antenneNom}` : 'Commande transférée par l\'antenne',
     style: STATUT_STYLE.TRANSFEREE_SIEGE,
+    quand: commande?.transferee_au_siege_at,
   };
   const priseEtape = {
     id: 'prise',
     label: reliquat > 0 ? 'Prise en charge partielle au siège' : 'Prise en charge au siège',
     style: reliquat > 0 ? STATUT_STYLE.PARTIELLEMENT_ARCHIVEE : STATUT_STYLE.TRANSMISE_SIEGE,
+    quand: commande?.prise_en_charge_siege_at,
   };
   const dispersionEtape = {
     id: 'dispersion',
     label: commande?.statut === 'DISPERSEE' && reliquat <= 0 ? 'Commande dispersée' : 'Dispersion partielle',
     style: commande?.statut === 'DISPERSEE' && reliquat <= 0 ? STATUT_STYLE.DISPERSEE : STATUT_STYLE.PARTIELLEMENT_DISPERSEE,
+    quand: commande?.dispersee_at,
   };
 
   let etapes;
@@ -188,10 +193,12 @@ function parcoursStatut(commande, stage) {
   if (dispersee) etapes.push(dispersionEtape);
 
   if (commande?.statut === 'REJETEE_ANTENNE' || commande?.statut === 'REJETEE_SIEGE') {
+    const rejet = [...(commande.journal || [])].reverse().find((evt) => evt.action === 'REJET');
     etapes.push({
       id: commande.statut,
       label: STATUTS[commande.statut] || commande.statut,
       style: STATUT_STYLE[commande.statut],
+      quand: rejet?.created_at,
     });
   }
 
@@ -205,13 +212,25 @@ function parcoursStatut(commande, stage) {
 function PastillesStatut({ commande, stage, compact = false }) {
   const etapes = parcoursStatut(commande, stage);
   return (
-    <div className="flex flex-col items-start gap-1">
-      {etapes.map((etape) => (
-        <span key={etape.id} className={`inline-flex px-2 py-0.5 rounded border font-bold leading-tight ${compact ? 'text-[10px]' : ''} ${etape.style || ''}`}>
-          {etape.label}
-        </span>
-      ))}
-    </div>
+    <ol className="flex flex-col items-end gap-0 max-w-[16rem]">
+      {etapes.map((etape, index) => {
+        const actuel = index === etapes.length - 1;
+        return (
+          <li key={etape.id} className="flex flex-col items-end">
+            {index > 0 && (
+              <span className="text-[9px] font-bold uppercase tracking-wide text-slate-400 py-0.5">quitté →</span>
+            )}
+            <span className={`inline-flex flex-col items-end px-2 py-0.5 rounded border leading-tight text-right ${compact ? 'text-[10px]' : 'text-xs'} ${actuel ? `font-bold ${etape.style || ''}` : 'font-semibold bg-slate-50 text-slate-500 border-slate-200'}`}>
+              <span className={actuel ? '' : 'line-through decoration-slate-400'}>{etape.label}</span>
+              <span className={`font-semibold normal-case ${actuel ? 'opacity-80' : 'text-slate-400 no-underline'}`} style={{ textDecoration: 'none' }}>
+                {actuel ? 'Statut actuel' : 'Statut quitté'}
+                {etape.quand ? ` · ${formaterDate(etape.quand)}` : ''}
+              </span>
+            </span>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
@@ -507,6 +526,7 @@ export default function FluxApprovisionnement({ activePersona }) {
   const [selections, setSelections] = useState({}); // { [produit_id]: quantite }
   const [rechercheMed, setRechercheMed] = useState('');
   const [modalOuvert, setModalOuvert] = useState(false);
+  const [commandeEdition, setCommandeEdition] = useState(null);
   const [recherche, setRecherche] = useState('');
   const [filtre, setFiltre] = useState('tous');
   const [ligneOuverte, setLigneOuverte] = useState(null);
@@ -624,8 +644,39 @@ export default function FluxApprovisionnement({ activePersona }) {
     ? [antenneParDefaut.nom, antenneParDefaut.chef_lieu].filter(Boolean).join(' — ')
     : '';
 
+  function fermerDemande() {
+    setCommandeEdition(null);
+    setModalOuvert(false);
+  }
+
+  /** Le demandeur corrige sa demande tant qu'elle n'a pas quitté l'antenne. */
+  function demandeEditable(commande) {
+    return estDemandeur && commande?.statut === 'SOUMISE_ANTENNE';
+  }
+
+  function ouvrirModification(commande) {
+    const selectionsInit = {};
+    const manquants = [];
+    (commande.lignes || []).forEach((row) => {
+      if (!row.produit_id) return;
+      selectionsInit[row.produit_id] = row.quantite_demandee;
+      if (!produits.some((p) => String(p.id) === String(row.produit_id))) {
+        manquants.push({ id: row.produit_id, designation: row.designation });
+      }
+    });
+    if (manquants.length) setProduits((prev) => [...manquants, ...prev]);
+    setSelections(selectionsInit);
+    setMotif(commande.motif || '');
+    setPartenaire(commande.partenaire_nom || structureCompte || activePersona?.entite || '');
+    setRechercheMed('');
+    setError('');
+    setCommandeEdition(commande);
+    setModalOuvert(true);
+  }
+
   /** Demandeur = sa structure ; chef = à son nom ; Direction générale = vers l'antenne choisie. */
   function ouvrirDemande() {
+    setCommandeEdition(null);
     if (estDirectionGenerale) {
       setPartenaire('Direction générale');
     } else if (estChefAntenne) {
@@ -666,7 +717,12 @@ export default function FluxApprovisionnement({ activePersona }) {
       .filter(([, qte]) => qte > 0)
       .map(([produitId, qte]) => {
         const p = produits.find((prod) => String(prod.id) === String(produitId));
-        return { produit_id: Number(produitId), quantite_demandee: qte, designation: p?.designation };
+        const deja = (commandeEdition?.lignes || []).find((row) => String(row.produit_id) === String(produitId));
+        return {
+          produit_id: Number(produitId),
+          quantite_demandee: qte,
+          designation: p?.designation || deja?.designation || 'Médicament',
+        };
       });
     if (!lignesSelections.length) {
       setError('Sélectionnez au moins un médicament.');
@@ -674,23 +730,29 @@ export default function FluxApprovisionnement({ activePersona }) {
     }
     setSaving(true);
     setError('');
+    const edition = commandeEdition;
     try {
-      await apiRequest('/flux/commandes', {
-        method: 'POST',
-        body: JSON.stringify({
-          antenne_id: Number(estDirectionGenerale ? antenneId : (antenneCompte?.id || antenneDuCompte || antenneId)),
-          partenaire_nom: estDirectionGenerale ? 'Direction générale' : (estChefAntenne ? nomChef : partenaire),
-          partenaire_type: estDirectionGenerale ? 'DIRECTION_GENERALE' : (estChefAntenne ? 'ANTENNE' : 'PHARMACIE'),
-          motif,
-          lignes: lignesSelections,
-        }),
+      await apiRequest(edition ? `/flux/commandes/${edition.id}` : '/flux/commandes', {
+        method: edition ? 'PUT' : 'POST',
+        body: JSON.stringify(edition
+          ? { motif, lignes: lignesSelections }
+          : {
+            antenne_id: Number(estDirectionGenerale ? antenneId : (antenneCompte?.id || antenneDuCompte || antenneId)),
+            partenaire_nom: estDirectionGenerale ? 'Direction générale' : (estChefAntenne ? nomChef : partenaire),
+            partenaire_type: estDirectionGenerale ? 'DIRECTION_GENERALE' : (estChefAntenne ? 'ANTENNE' : 'PHARMACIE'),
+            motif,
+            lignes: lignesSelections,
+          }),
       });
       setSelections({});
       setRechercheMed('');
       setMotif('');
       setPartenaire('');
+      setCommandeEdition(null);
       setModalOuvert(false);
-      if (estChefAntenne) {
+      if (edition) {
+        pushToast(`Demande ${edition.numero_commande} modifiée.`);
+      } else if (estChefAntenne) {
         pushToast('Bon enregistré et transféré à la Direction générale.');
       }
       await load();
@@ -821,7 +883,7 @@ export default function FluxApprovisionnement({ activePersona }) {
 
   async function supprimerCommande(commande) {
     const ok = await askConfirm({
-      message: `Supprimer la commande ${commande.numero_commande} ?`,
+      message: `Supprimer la demande ${commande.numero_commande} ?`,
       confirmLabel: 'Supprimer',
       tone: 'danger',
     });
@@ -1004,8 +1066,11 @@ export default function FluxApprovisionnement({ activePersona }) {
           <PastillesStatut commande={commande} stage={stage} compact />
           <div className="flex flex-wrap justify-end gap-1">
             <BoutonVoir titre="Voir le détail" onClick={() => setLigneOuverte(commande.id)} />
-            {peutSupprimer && (
-              <BoutonSupprimer titre="Supprimer la commande" onClick={() => supprimerCommande(commande)} />
+            {demandeEditable(commande) && (
+              <BoutonModifier titre="Modifier la demande" onClick={() => ouvrirModification(commande)} />
+            )}
+            {(demandeEditable(commande) || peutSupprimer) && (
+              <BoutonSupprimer titre="Supprimer la demande" onClick={() => supprimerCommande(commande)} />
             )}
             {act.aTransferer && (
               <button
@@ -1047,7 +1112,8 @@ export default function FluxApprovisionnement({ activePersona }) {
             </div>
             <p className="text-[11px] text-slate-500 mt-0.5">
               {commandesVisibles.length} affichée{commandesVisibles.length > 1 ? 's' : ''} sur {commandes.length}
-              {estChefAntenne ? ' — demandes des partenaires de votre antenne uniquement' : ''}
+              {estDemandeur ? ' — évolution du statut de vos demandes' : ''}
+              {estChefAntenne ? ' — évolution du statut pour tous les demandeurs de votre antenne' : ''}
               {(estDirectionGenerale || estSupervision) && estVueSiege ? ' — année, mois, antenne qui a transféré, puis demandeur' : ''}
             </p>
           </div>
@@ -1417,7 +1483,13 @@ export default function FluxApprovisionnement({ activePersona }) {
                 </ol>
               </div>
             )}
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-2">
+              {demandeEditable(commandeDetail) && (
+                <>
+                  <BoutonModifier titre="Modifier la demande" onClick={() => { setLigneOuverte(null); ouvrirModification(commandeDetail); }} />
+                  <BoutonSupprimer titre="Supprimer la demande" onClick={() => supprimerCommande(commandeDetail)} />
+                </>
+              )}
               <button type="button" onClick={() => setLigneOuverte(null)} className="px-3 py-2 text-xs font-bold rounded border border-slate-300 text-slate-700">Fermer</button>
             </div>
           </div>
@@ -1560,13 +1632,15 @@ export default function FluxApprovisionnement({ activePersona }) {
       )}
 
       {modalOuvert && (
-        <div className="fixed inset-0 z-[80] bg-slate-900/50 flex items-center justify-center p-4" onMouseDown={() => setModalOuvert(false)}>
+        <div className="fixed inset-0 z-[80] bg-slate-900/50 flex items-center justify-center p-4" onMouseDown={fermerDemande}>
           <form onSubmit={envoyerCommande} onMouseDown={(e) => e.stopPropagation()} className="w-full max-w-2xl bg-white border border-slate-200 rounded-md p-4 space-y-3 max-h-[90vh] overflow-y-auto shadow-xl">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-sm font-bold text-slate-900">
-                {estDirectionGenerale ? 'Nouvelle commande — Direction générale' : (estChefAntenne ? 'Nouvelle demande (chef d\'antenne)' : (estDemandeur ? 'Nouvelle demande' : 'Nouvelle commande'))}
+                {commandeEdition
+                  ? `Modifier ${commandeEdition.numero_commande}`
+                  : (estDirectionGenerale ? 'Nouvelle commande — Direction générale' : (estChefAntenne ? 'Nouvelle demande (chef d\'antenne)' : (estDemandeur ? 'Nouvelle demande' : 'Nouvelle commande')))}
               </h2>
-              <button type="button" onClick={() => setModalOuvert(false)} className="p-1 rounded text-slate-500 hover:bg-slate-100" aria-label="Fermer">
+              <button type="button" onClick={fermerDemande} className="p-1 rounded text-slate-500 hover:bg-slate-100" aria-label="Fermer">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -1710,8 +1784,8 @@ export default function FluxApprovisionnement({ activePersona }) {
               );
             })()}
             <div className="flex justify-end gap-2 pt-1">
-              <button type="button" onClick={() => setModalOuvert(false)} className="px-3 py-2 text-xs font-bold rounded border border-slate-300 text-slate-700">Annuler</button>
-              <button disabled={saving} className="px-3 py-2 text-xs font-bold rounded bg-[#0E2A4F] text-white">{saving ? 'Envoi…' : 'Enregistrer la demande'}</button>
+              <button type="button" onClick={fermerDemande} className="px-3 py-2 text-xs font-bold rounded border border-slate-300 text-slate-700">Annuler</button>
+              <button disabled={saving} className="px-3 py-2 text-xs font-bold rounded bg-[#0E2A4F] text-white">{saving ? 'Envoi…' : (commandeEdition ? 'Enregistrer les modifications' : 'Enregistrer la demande')}</button>
             </div>
           </form>
         </div>
