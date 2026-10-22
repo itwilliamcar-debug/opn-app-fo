@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { X, Printer, Download, FileText, Receipt, Loader2 } from 'lucide-react';
 import OpnLogo from '../common/OpnLogo';
+import FiligraneOpn from '../common/FiligraneOpn';
 import { previewPrintDocument } from '../../utils/pdfExport';
 import { downloadFluxDocumentPdf, triggerBlobDownload } from '../../services/api';
 
@@ -87,18 +88,7 @@ export default function FluxPiecePdfModal({ piece, isOpen, onClose }) {
 
         <div className="overflow-y-auto p-5 bg-slate-50">
           <div ref={printRef} className="relative bg-white border border-slate-200 rounded-md p-6 space-y-5 text-slate-800 overflow-hidden">
-            <div
-              aria-hidden
-              className="pointer-events-none absolute inset-0 flex items-center justify-center select-none"
-              style={{ zIndex: 0 }}
-            >
-              <span
-                className="text-[120px] font-black tracking-[0.2em] text-slate-400/20"
-                style={{ transform: 'rotate(-32deg)' }}
-              >
-                OPN
-              </span>
-            </div>
+            <FiligraneOpn />
             <div className="relative space-y-5" style={{ zIndex: 1 }}>
               <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
                 <div className="flex items-center gap-3">

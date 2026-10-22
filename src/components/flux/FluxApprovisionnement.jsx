@@ -262,30 +262,48 @@ function suiviQuantites(commande) {
 /** Tailles de page pour la liste en cartes (tous profils). */
 const TAILLES_PAGE = [5, 10, 20, 50];
 
+/** Liste conservée quand on quitte la page, pour ne pas la recharger au retour. */
+const cacheFlux = new Map();
+
+function cleFlux(persona) {
+  return String(persona?.email || persona?.id || persona?.user_id || 'invite');
+}
+
 const LIBELLES_MOIS = [
   '', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
   'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre',
 ];
 
-/** Hiérarchie année → mois → antenne → demandeur à partir d’une liste de commandes. */
-function construireHierarchieCommandes(liste) {
-  const anneeMoisDe = (commande) => {
-    const ref = commande.transferee_au_siege_at || commande.created_at || commande.date_commande;
-    const d = ref ? new Date(ref) : new Date();
-    if (Number.isNaN(d.getTime())) {
-      const now = new Date();
-      return { annee: now.getFullYear(), mois: now.getMonth() + 1 };
-    }
-    return { annee: d.getFullYear(), mois: d.getMonth() + 1 };
-  };
+/** Date de la commande : le jour où elle a été passée. */
+function instantCommande(commande) {
+  const ref = commande?.created_at || commande?.date_commande;
+  const date = ref ? new Date(ref) : null;
+  if (!date || Number.isNaN(date.getTime())) return new Date(0);
+  return date;
+}
 
+/** Plus récent en premier. À date égale, l’identifiant le plus élevé passe devant. */
+function comparerCommandesRecentes(a, b) {
+  const delta = instantCommande(b).getTime() - instantCommande(a).getTime();
+  if (delta !== 0) return delta;
+  return Number(b?.id || 0) - Number(a?.id || 0);
+}
+
+/** Hiérarchie année → mois → jour → antenne → demandeur. Même disposition pour tous les profils. */
+function construireHierarchieCommandes(liste) {
+  const aujourdhui = new Date();
   const parAnnee = new Map();
   (liste || []).forEach((commande) => {
-    const { annee, mois } = anneeMoisDe(commande);
+    const date = instantCommande(commande);
+    const annee = date.getTime() ? date.getFullYear() : aujourdhui.getFullYear();
+    const mois = date.getTime() ? date.getMonth() + 1 : aujourdhui.getMonth() + 1;
+    const jour = date.getTime() ? date.getDate() : aujourdhui.getDate();
     if (!parAnnee.has(annee)) parAnnee.set(annee, new Map());
     const parMois = parAnnee.get(annee);
     if (!parMois.has(mois)) parMois.set(mois, new Map());
-    const parAntenne = parMois.get(mois);
+    const parJour = parMois.get(mois);
+    if (!parJour.has(jour)) parJour.set(jour, new Map());
+    const parAntenne = parJour.get(jour);
     const antenneId = String(commande.antenne_id || commande.antenne?.id || 0);
     if (!parAntenne.has(antenneId)) {
       parAntenne.set(antenneId, {
@@ -316,36 +334,55 @@ function construireHierarchieCommandes(liste) {
     antenne.origines.get(cleOrigine).commandes.push(commande);
   });
 
+  const antennesDepuis = (parAntenne) => [...parAntenne.values()]
+    .map((antenne) => {
+      const origines = [...antenne.origines.values()]
+        .map((o) => ({
+          ...o,
+          commandes: [...o.commandes].sort(comparerCommandesRecentes),
+          nb_commandes: o.commandes.length,
+        }))
+        .sort((a, b) => rangOrigine(a.type).localeCompare(rangOrigine(b.type)) || a.nom.localeCompare(b.nom, 'fr'));
+      const commandesAntenne = origines.flatMap((o) => o.commandes);
+      return {
+        antenne_id: antenne.antenne_id,
+        antenne_nom: antenne.antenne_nom,
+        chef_lieu: antenne.chef_lieu,
+        nb_commandes: commandesAntenne.length,
+        en_attente: commandesAntenne.filter((c) => c.statut === 'TRANSFEREE_SIEGE').length,
+        reliquats: commandesAntenne.filter((c) => c.statut === 'PARTIELLEMENT_ARCHIVEE').length,
+        satisfaites: commandesAntenne.filter((c) => c.statut === 'DISPERSEE').length,
+        transferee_par: [...new Set(commandesAntenne.map((c) => c.transferee_au_siege_par_nom).filter(Boolean))],
+        origines,
+      };
+    })
+    .sort((a, b) => a.antenne_nom.localeCompare(b.antenne_nom, 'fr'));
   return [...parAnnee.entries()]
     .sort((a, b) => b[0] - a[0])
     .map(([annee, parMois]) => {
       const mois = [...parMois.entries()]
         .sort((a, b) => b[0] - a[0])
-        .map(([moisNum, parAntenne]) => {
-          const antennes = [...parAntenne.values()]
-            .map((antenne) => {
-              const origines = [...antenne.origines.values()]
-                .map((o) => ({ ...o, nb_commandes: o.commandes.length }))
-                .sort((a, b) => rangOrigine(a.type).localeCompare(rangOrigine(b.type)) || a.nom.localeCompare(b.nom, 'fr'));
-              const commandesAntenne = origines.flatMap((o) => o.commandes);
+        .map(([moisNum, parJour]) => {
+          const jours = [...parJour.entries()]
+            .sort((a, b) => b[0] - a[0])
+            .map(([jourNum, parAntenne]) => {
+              const antennes = antennesDepuis(parAntenne);
+              const estAujourdhui = annee === aujourdhui.getFullYear()
+                && moisNum === aujourdhui.getMonth() + 1
+                && jourNum === aujourdhui.getDate();
               return {
-                antenne_id: antenne.antenne_id,
-                antenne_nom: antenne.antenne_nom,
-                chef_lieu: antenne.chef_lieu,
-                nb_commandes: commandesAntenne.length,
-                en_attente: commandesAntenne.filter((c) => c.statut === 'TRANSFEREE_SIEGE').length,
-                reliquats: commandesAntenne.filter((c) => c.statut === 'PARTIELLEMENT_ARCHIVEE').length,
-                satisfaites: commandesAntenne.filter((c) => c.statut === 'DISPERSEE').length,
-                transferee_par: [...new Set(commandesAntenne.map((c) => c.transferee_au_siege_par_nom).filter(Boolean))],
-                origines,
+                jour: jourNum,
+                libelle: `${jourNum} ${(LIBELLES_MOIS[moisNum] || '').toLowerCase()}`,
+                estAujourdhui,
+                nb_commandes: antennes.reduce((n, a) => n + a.nb_commandes, 0),
+                antennes,
               };
-            })
-            .sort((a, b) => a.antenne_nom.localeCompare(b.antenne_nom, 'fr'));
+            });
           return {
             mois: moisNum,
             libelle: LIBELLES_MOIS[moisNum] || String(moisNum),
-            nb_commandes: antennes.reduce((n, a) => n + a.nb_commandes, 0),
-            antennes,
+            nb_commandes: jours.reduce((n, j) => n + j.nb_commandes, 0),
+            jours,
           };
         });
       return {
@@ -503,9 +540,10 @@ function ListeDeroulante({ valeur, surChangement, options, texteVide = 'Choisir'
 export default function FluxApprovisionnement({ activePersona }) {
   const role = getCodeRole(activePersona);
   const localStage = getFluxStage(role);
-  const [stage, setStage] = useState(localStage);
-  const [commandes, setCommandes] = useState([]);
-  const [compteurs, setCompteurs] = useState({
+  const conserve = cacheFlux.get(cleFlux(activePersona));
+  const [stage, setStage] = useState(conserve?.stage || localStage);
+  const [commandes, setCommandes] = useState(conserve?.commandes || []);
+  const [compteurs, setCompteurs] = useState(conserve?.compteurs || {
     total: 0, recues: 0, transmises: 0, dispersees: 0, archivees: 0,
     en_attente: 0, satisfaites: 0, reliquats: 0, transferees: 0,
   });
@@ -513,12 +551,13 @@ export default function FluxApprovisionnement({ activePersona }) {
   const [anneesRepliees, setAnneesRepliees] = useState(() => new Set());
   const [ongletFlux, setOngletFlux] = useState('commandes'); // commandes | bons | factures
   const [transfertEnCours, setTransfertEnCours] = useState(null);
-  const [antenneCompte, setAntenneCompte] = useState(null);
-  const [structureCompte, setStructureCompte] = useState('');
-  const [antennes, setAntennes] = useState([]);
-  const [produits, setProduits] = useState([]);
+  const [antenneCompte, setAntenneCompte] = useState(conserve?.antenneCompte || null);
+  const [structureCompte, setStructureCompte] = useState(conserve?.structureCompte || '');
+  const [antennes, setAntennes] = useState(conserve?.antennes || []);
+  const [produits, setProduits] = useState(conserve?.produits || []);
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!conserve);
+  const [rafraichit, setRafraichit] = useState(false);
   const [saving, setSaving] = useState(false);
   const [partenaire, setPartenaire] = useState('');
   const [antenneId, setAntenneId] = useState('');
@@ -533,7 +572,7 @@ export default function FluxApprovisionnement({ activePersona }) {
   const [taillePage, setTaillePage] = useState(20);
   const [pageCourante, setPageCourante] = useState(1);
   const [aideOuverte, setAideOuverte] = useState(false);
-  const [peutSupprimer, setPeutSupprimer] = useState(false);
+  const [peutSupprimer, setPeutSupprimer] = useState(Boolean(conserve?.peutSupprimer));
   const [modalAction, setModalAction] = useState(null); // { type: 'prise'|'dispersion', commande }
   const [quantitesAction, setQuantitesAction] = useState({});
   const [noteAction, setNoteAction] = useState('');
@@ -571,49 +610,76 @@ export default function FluxApprovisionnement({ activePersona }) {
   const FILTRES = estVueSiege ? FILTRES_SIEGE : FILTRES_ANTENNE;
 
   const loadEnCours = useRef(false);
+  const aDejaUneListe = useRef(Boolean(conserve));
+  const cleCompte = cleFlux(activePersona);
   const load = useCallback(async (silent = false) => {
     if (loadEnCours.current) return;
     loadEnCours.current = true;
-    if (!silent) {
+    const garderLaListe = silent || aDejaUneListe.current;
+    if (!garderLaListe) {
       setLoading(true);
+      setError('');
+    } else if (!silent) {
+      setRafraichit(true);
       setError('');
     }
     try {
-      if (silent) {
-        // Poll léger : uniquement les commandes (évite de saturer php artisan serve).
-        const flux = await apiRequest('/flux/commandes');
-        setStage(flux.stage || localStage);
-        setCommandes(flux.commandes || []);
-        setCompteurs(flux.compteurs || {});
-        setAntenneCompte(flux.antenne_compte || null);
-        setStructureCompte(flux.structure_compte || '');
-        setPeutSupprimer(Boolean(flux.peut_supprimer));
-        setError('');
-      } else {
-        // Commandes d'abord (critique) ; antennes/produits en best-effort pour ne pas vider la liste.
-        const flux = await apiRequest('/flux/commandes');
-        setStage(flux.stage || localStage);
-        setCommandes(flux.commandes || []);
-        setCompteurs(flux.compteurs || {});
-        setAntenneCompte(flux.antenne_compte || null);
-        setStructureCompte(flux.structure_compte || '');
-        setPeutSupprimer(Boolean(flux.peut_supprimer));
+      const flux = await apiRequest('/flux/commandes');
+      const suivant = {
+        stage: flux.stage || localStage,
+        commandes: flux.commandes || [],
+        compteurs: flux.compteurs || {},
+        antenneCompte: flux.antenne_compte || null,
+        structureCompte: flux.structure_compte || '',
+        peutSupprimer: Boolean(flux.peut_supprimer),
+      };
+      setStage(suivant.stage);
+      setCommandes(suivant.commandes);
+      setCompteurs(suivant.compteurs);
+      setAntenneCompte(suivant.antenneCompte);
+      setStructureCompte(suivant.structureCompte);
+      setPeutSupprimer(suivant.peutSupprimer);
+      setError('');
+      let antennesSuivantes;
+      let produitsSuivants;
+      if (!silent) {
         const [ants, meds] = await Promise.allSettled([
           apiRequest('/antennes'),
           apiRequest('/pharmacy/produits'),
         ]);
-        if (ants.status === 'fulfilled') setAntennes(ants.value.antennes || []);
-        if (meds.status === 'fulfilled') setProduits((meds.value.produits || []).slice(0, 80));
+        if (ants.status === 'fulfilled') {
+          antennesSuivantes = ants.value.antennes || [];
+          setAntennes(antennesSuivantes);
+        }
+        if (meds.status === 'fulfilled') {
+          produitsSuivants = (meds.value.produits || []).slice(0, 80);
+          setProduits(produitsSuivants);
+        }
       }
+      const precedent = cacheFlux.get(cleCompte) || {};
+      cacheFlux.set(cleCompte, {
+        ...precedent,
+        ...suivant,
+        antennes: antennesSuivantes || precedent.antennes || [],
+        produits: produitsSuivants || precedent.produits || [],
+      });
+      aDejaUneListe.current = true;
     } catch (err) {
       if (!silent && !err?.skipped) setError(err?.backendUnavailable ? '' : (err.message || 'Impossible de charger le flux.'));
     } finally {
       loadEnCours.current = false;
-      if (!silent) setLoading(false);
+      if (!silent) {
+        setLoading(false);
+        setRafraichit(false);
+      }
     }
-  }, [localStage]);
+  }, [localStage, cleCompte]);
 
-  useEffect(() => { load(); }, [load]);
+  /* Au retour sur la page, la liste déjà vue reste affichée. Seule l'icône d'actualisation relance le chargement. */
+  useEffect(() => {
+    if (cacheFlux.has(cleCompte)) return;
+    load();
+  }, [load, cleCompte]);
 
   useEffect(() => {
     if (!ligneOuverte) return undefined;
@@ -951,7 +1017,7 @@ export default function FluxApprovisionnement({ activePersona }) {
         ...(commande.lignes || []).map((row) => row.designation),
       ].filter(Boolean).join(' ').toLowerCase();
       return texte.includes(q);
-    });
+    }).sort(comparerCommandesRecentes);
   }, [commandes, recherche, filtre, stage]);
 
   /* Revenir à la première page dès que le filtre, la recherche ou la taille changent. */
@@ -1114,7 +1180,7 @@ export default function FluxApprovisionnement({ activePersona }) {
               {commandesVisibles.length} affichée{commandesVisibles.length > 1 ? 's' : ''} sur {commandes.length}
               {estDemandeur ? ' — évolution du statut de vos demandes' : ''}
               {estChefAntenne ? ' — évolution du statut pour tous les demandeurs de votre antenne' : ''}
-              {(estDirectionGenerale || estSupervision) && estVueSiege ? ' — année, mois, antenne qui a transféré, puis demandeur' : ''}
+              {(estDirectionGenerale || estSupervision) && estVueSiege ? ' — année, mois, jour, les plus récentes en haut' : ''}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -1143,8 +1209,8 @@ export default function FluxApprovisionnement({ activePersona }) {
             ))}
           </div>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={() => load()} disabled={loading} className="w-8 h-8 inline-flex items-center justify-center rounded border border-slate-200 text-slate-600 hover:bg-slate-50" title="Actualiser les commandes" aria-label="Actualiser les commandes">
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <button type="button" onClick={() => load()} disabled={loading || rafraichit} className="w-8 h-8 inline-flex items-center justify-center rounded border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-60" title="Actualiser les commandes" aria-label="Actualiser les commandes">
+              <RefreshCw className={`w-3.5 h-3.5 ${(loading || rafraichit) ? 'animate-spin' : ''}`} />
             </button>
             {peutCommander && (
               <button type="button" onClick={ouvrirDemande} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded bg-[#0E2A4F] text-white">
@@ -1226,10 +1292,7 @@ export default function FluxApprovisionnement({ activePersona }) {
                 {!loading && hierarchiePage.length > 0 && (
                   <div className="p-3 space-y-3">
                     <p className="text-[11px] text-slate-500 px-1">
-                      {estVueSiege && 'Classement année → mois → antenne de réception → commande de la Direction générale, de l’antenne ou du demandeur. '}
-                      {estChefAntenne && 'Classement année → mois → demandeur de votre antenne. '}
-                      {estDemandeur && 'Classement année → mois de vos demandes. '}
-                      Seul le bandeau année se plie / déplie.
+                      Classement année → mois → jour, les plus récentes en haut. Seul le bandeau année se plie / déplie.
                     </p>
                     {hierarchiePage.map((anneeBloc) => {
                       const ouverte = !anneesRepliees.has(anneeBloc.annee);
@@ -1254,8 +1317,18 @@ export default function FluxApprovisionnement({ activePersona }) {
                                     {moisBloc.libelle} {anneeBloc.annee}
                                     <span className="ml-2 font-semibold text-slate-500">— {moisBloc.nb_commandes} commande{moisBloc.nb_commandes > 1 ? 's' : ''}</span>
                                   </p>
-                                  <div className="ml-4 border-l-2 border-slate-200 pl-3 space-y-3">
-                                    {(moisBloc.antennes || []).map((antenne) => {
+                                  <div className="ml-3 border-l-2 border-slate-200 pl-3 space-y-3">
+                                    {(moisBloc.jours || []).map((jourBloc) => (
+                                      <div key={jourBloc.jour} className="space-y-2">
+                                        <p className={`text-[11px] font-bold ${jourBloc.estAujourdhui ? 'text-[#0E2A4F]' : 'text-slate-700'}`}>
+                                          {jourBloc.libelle}
+                                          {jourBloc.estAujourdhui && (
+                                            <span className="ml-2 inline-flex items-center rounded bg-[#0E2A4F] px-1.5 py-0.5 text-[10px] font-bold text-white">Aujourd&apos;hui</span>
+                                          )}
+                                          <span className="ml-2 font-semibold text-slate-500">— {jourBloc.nb_commandes} commande{jourBloc.nb_commandes > 1 ? 's' : ''}</span>
+                                        </p>
+                                        <div className="ml-3 border-l-2 border-slate-200 pl-3 space-y-3">
+                                    {(jourBloc.antennes || []).map((antenne) => {
                                       const transferes = (antenne.transferee_par || []).filter(Boolean);
                                       return (
                                         <div key={antenne.antenne_id || antenne.antenne_nom} className="space-y-2">
@@ -1305,6 +1378,9 @@ export default function FluxApprovisionnement({ activePersona }) {
                                         </div>
                                       );
                                     })}
+                                        </div>
+                                      </div>
+                                    ))}
                                   </div>
                                 </div>
                               ))}
